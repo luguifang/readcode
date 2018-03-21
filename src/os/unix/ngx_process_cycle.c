@@ -1480,3 +1480,131 @@ ngx_cache_loader_process_handler(ngx_event_t *ev)
 
     exit(0);
 }
+
+
+
+
+/*
+ * 1 常见信号操作函数
+int sigemptyset(sigset_t *set);#值空set 信号集
+int sigfillset(sigset_t *set);函数初始化信号集，但将信号集set设置为所有信号的集合
+int sigaddset(sigset_t *set,int signo);#set 信号集加入 signo 信号
+int sigdelset(sigset_t *set,int signo);从信号集中删除signo信号
+int sigismemeber(sigset_t* set,int signo);判断signo 是否再信号集中
+int sigprocmask(int how,const sigset_t*set,sigset_t *oset);# 设置信号掩码
+
+2 信号处理函数
+(1)int sigaction(int signo,const struct sigaction *act,strcut sigaction *oldact);
+函数用来改变或者检测信号的行为
+参数1：变更signo指定的信号 他可以是任何值 SIGKILL SIGSTOP 除外
+参数2 和3：对信号进行控制，act不为空 oldact不为空那么oldact将 会存储信号以前的行为，如果act为空 oldact 不会空，oldact将存储现在的行为
+
+struct sigaction {
+void (*sa_handler)(int);
+void (*sa_sigaction)(int,siginfo_t*,void*);
+sigset_t sa_mask;
+int sa_flags;
+void (*sa_restorer)(void);
+}
+ 参数含义:
+sa_handler是一个函数指针，主要是表示接收到信号时所要采取的行动。此字段的值可以是SIG_DFL,SIG_IGN.分别代表默认操作与内核将忽略进程的信号。这个函数只传递一个参数那就是信号代码。
+当SA_SIGINFO被设定在sa_flags中，那么则会使用sa_sigaction来指示信号处理函数，而非sa_handler.
+sa_mask设置了掩码集，在程序执行期间会阻挡掩码集中的信号。
+sa_flags设置了一些标志， SA_RESETHAND当该函数处理完成之后，设定为为系统默认的处理模式。SA_NODEFER 在处理函数中，如果再次到达此信号时，将不会阻塞。默认情况下，同一信号两次到达时，如果此时处于信号处理程序中，那么此信号将会阻塞。
+SA_SIGINFO表示用sa_sigaction指示的函数。
+sa_restorer已经被废弃。
+
+sa_sigaction所指向的函数原型:void my_handler(int signo,siginfo_t *si,void *ucontext);
+第一个参数: 信号编号
+第二个参数:指向一个siginfo_t结构。
+第三个参数是一个ucontext_t结构。
+其中siginfo_t结构体中包含了大量的信号携带信息，可以看出，这个函数比sa_handler要强大，因为前者只能传递一个信号代码，而后者可以传递siginfo_t信息。
+
+typedef struct siginfo_t{
+int si_signo;//信号编号
+int si_errno;//如果为非零值则错误代码与之关联
+int si_code;//说明进程如何接收信号以及从何处收到
+pid_t si_pid;//适用于SIGCHLD，代表被终止进程的PID
+pid_t si_uid;//适用于SIGCHLD,代表被终止进程所拥有进程的UID
+int si_status;//适用于SIGCHLD，代表被终止进程的状态
+clock_t si_utime;//适用于SIGCHLD，代表被终止进程所消耗的用户时间
+clock_t si_stime;//适用于SIGCHLD，代表被终止进程所消耗系统的时间
+sigval_t si_value;
+int si_int;
+void * si_ptr;
+void* si_addr;
+int si_band;
+int si_fd;
+};
+sigqueue(pid_t pid,int signo,const union sigval value)
+union sigval{int sival_int, void*sival_ptr};
+sigqueue函数类似于kill,也是一个进程向另外一个进程发送信号的。
+但它比kill函数强大。
+第一个参数指定目标进程的pid.
+第二个参数是一个信号代码。
+第三个参数是一个共用体，每次只能使用一个，用来进程发送信号传递的数据。
+或者传递整形数据，或者是传递指针。
+发送的数据被sa_sigaction所指示的函数的siginfo_t结构体中的si_ptr或者是si_int所接收。
+
+sigpending的用法
+sigpending(sigset_t set);
+这个函数的作用是返回未决的信号到信号集set中。即未决信号集，未决信号集不仅包括被阻塞的信号，也可能包括已经到达但没有被处理的信号。
+
+3 =========================
+保护临界区不被中断
+1.  函数的可重入性
+函数的可重入性是指可以多于一个任务并发使用函数，而不必担心数据错误。相反，不可重入性是指不能多于一个任务共享函数，除非能保持函数互斥(或者使用信号量，或者在代码的关键部分禁用中断)。可重入函数可以在任意时刻被中断，稍后继续执行，而不会丢失数据。
+可重入函数：
+* 不为连续的调用持有静态数据。
+* 不返回指向静态数据的指针；所有数据都由函数的调用者提供。
+* 使用本地数据，或者通过制作全局数据的本地拷贝来保护全局数据。
+* 绝不调用任何不可重入函数。
+
+不可重入函数可能导致混乱现象，如果当前进程的操作与信号处理程序同时对一个文件进行写操作或者是调用malloc()，那么就可能出现混乱，当从信号处理程序返回时，造成了状态不一致。从而引发错误。
+因此，信号的处理必须是可重入函数。
+简单的说，可重入函数是指在一个程序中调用了此函数，在信号处理程序中又调用了此函数，但仍然能够得到正确的结果。
+printf，malloc函数都是不可重入函数。printf函数如果打印缓冲区一半时，又有一个printf函数，那么此时会造成混乱。而malloc函数使用了系统全局内存分配表。
+2. 保护临界区不被中断 （参考 APUE sigsuspend章节）
+由于临界区的代码是关键代码，是非常重要的部分，因此，有必要对临界区进行保护，不希望信号来中断临界区操作。这里通过信号屏蔽字来阻塞信号的发生。
+
+下面介绍两个与保护临界区不被信号中断的相关函数。
+int pause(void);
+int sigsuspend(const sigset_t *sigmask);
+pause函数挂起一个进程，直到一个信号发生。
+sigsuspend函数的执行过程如下:
+(1)设置新的mask去阻塞当前进程
+(2)收到信号，调用信号的处理函数
+(3)将mask设置为原先的掩码
+(4)sigsuspend函数返回
+可以看出，sigsuspend函数是等待一个信号发生，当等待的信号发生时，执行完信号处理函数后就会返回。它是一个原子操作。
+保护临界区的中断:
+(1)首先用sigprocmask去阻塞信号
+(2)执行后关键代码后,用sigsuspend去捕获信号
+(3)然后sigprocmask去除阻塞
+这样信号就不会丢失了，而且不会中断临界区。
+
+4==========================信号的继承与执行
+当使用fork()函数时，子进程会继承父进程完全相同的信号语义，这也是有道理的，因为父子进程共享一个地址空间，所以父进程的信号处理程序也存在于子进程中。
+5=========================实时信号中锁的研究
+1. 信号处理函数与主函数之间的死锁
+当主函数访问临界资源时，通常需要加锁，如果主函数在访问临界区时，给临界资源上锁，此时发生了一个信号，那么转入信号处理函数，如果此时信号处理函数也对临界资源进行访问，那么信号处理函数也会加锁，由于主程序持有锁，信号处理程序等待主程序释放锁。又因为信号处理函数已经抢占了主函数，因此，主函数在信号处理函数结束之前不能运行。因此，必然造成死锁。
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
