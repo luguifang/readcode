@@ -98,6 +98,21 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     sigset_t           set;
 	
     struct itimerval   itv;
+/*
+	strcut itimerval {
+		struct timeval it_iterval; //next value 计时器重启动的事件间隔值
+		struct timeval it_value; // current value 计时器安装后首次启动的初始值
+		
+	}
+
+	struct timeval{
+		long tv_sec; //秒
+		long tv_usec;//微秒
+	}
+		
+*/
+
+	
     ngx_uint_t         live;
     ngx_msec_t         delay;
     ngx_listening_t   *ls;
@@ -187,37 +202,53 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                            "termination cycle: %d", delay);
 
-            itv.it_interval.tv_sec = 0;
+            itv.it_interval.tv_sec = 0; 
             itv.it_interval.tv_usec = 0;
-            itv.it_value.tv_sec = delay / 1000;
+            itv.it_value.tv_sec = delay / 1000; //设置延时启动
             itv.it_value.tv_usec = (delay % 1000 ) * 1000;
 
             if (setitimer(ITIMER_REAL, &itv, NULL) == -1) {
                 ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                               "setitimer() failed");
             }
+
+			/*
+				int setitimer(int which,const struct itimeval *value,struct itimerval *ovalue)
+				which : 间歇计时器类型 以下三种
+				ITIMER_REAL //数值为0 以系统真实的时间来计算，发送的信号时 SIGALRM
+				ITIMER_VIRTUAL//数值为1 以该进程在用户态下花费的时间来计算 发送信号 SIGVTARM
+				ITIMER_PROF //数值为2 以该进程在用户态下和内核态下所费的时间来计算 发送 SIGPROF
+
+				value:设置计时器当前值
+				ovalue:计时器原值
+				
+				settimer工作机制是，先对it_value倒计时，当it_value为零时触发信号，然后重置为it_interval，继续对it_value倒计时，一直这样循环下去
+			
+			*/
+
+			
         }
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "sigsuspend");
 
-        sigsuspend(&set);
+        sigsuspend(&set);//使master进程休眠，等待master进程收到信号后激活
 
         ngx_time_update();
 
         ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                        "wake up, sigio %i", sigio);
-
+		//监控所有子进程
         if (ngx_reap) {
             ngx_reap = 0;
             ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "reap children");
 
             live = ngx_reap_children(cycle);
         }
-
+		// live =0 所有子进程都己经退出 ngx_terminate 标志位为1 或者 ngx_quit为1  开始退出maset进程
         if (!live && (ngx_terminate || ngx_quit)) {
             ngx_master_process_exit(cycle);
         }
-
+		// 向所有子进程发送TERM 信号 通知子进程强制退出
         if (ngx_terminate) {
             if (delay == 0) {
                 delay = 50;
@@ -239,11 +270,11 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
             continue;
         }
-
+		// 表示需要优雅地退出服务，向所有子进程发送quit 信号 通知它们退出
         if (ngx_quit) {
             ngx_signal_worker_processes(cycle,
                                         ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
-
+			//关闭所有监听的端口
             ls = cycle->listening.elts;
             for (n = 0; n < cycle->listening.nelts; n++) {
                 if (ngx_close_socket(ls[n].fd) == -1) {
@@ -256,7 +287,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
             continue;
         }
-
+		// 需要重新读取配置文件 重新初始化ngx_cycle_t 结构体 用它来读取新的配置文件 再来气新的work进程 销毁旧的work进程
         if (ngx_reconfigure) {
             ngx_reconfigure = 0;
 
@@ -295,7 +326,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             ngx_start_cache_manager_processes(cycle, 0);
             live = 1;
         }
-
+		//重新打开所有文件
         if (ngx_reopen) {
             ngx_reopen = 0;
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "reopening logs");
@@ -748,7 +779,7 @@ ngx_reap_children(ngx_cycle_t *cycle)
 
 
 /*
-	退出master进程工作循环
+	退出master进程工作循环，函数内部将调用所有模块的exit_master 方法
 	lgf
 */
 
@@ -1508,7 +1539,7 @@ void (*sa_restorer)(void);
 }
  参数含义:
 sa_handler是一个函数指针，主要是表示接收到信号时所要采取的行动。此字段的值可以是SIG_DFL,SIG_IGN.分别代表默认操作与内核将忽略进程的信号。这个函数只传递一个参数那就是信号代码。
-当SA_SIGINFO被设定在sa_flags中，那么则会使用sa_sigaction来指示信号处理函数，而非sa_handler.
+当SA_SIGINFO被设定在sa_flags中，那么则会使用sa_sigactio  n来指示信号处理函数，而非sa_handler.
 sa_mask设置了掩码集，在程序执行期间会阻挡掩码集中的信号。
 sa_flags设置了一些标志， SA_RESETHAND当该函数处理完成之后，设定为为系统默认的处理模式。SA_NODEFER 在处理函数中，如果再次到达此信号时，将不会阻塞。默认情况下，同一信号两次到达时，如果此时处于信号处理程序中，那么此信号将会阻塞。
 SA_SIGINFO表示用sa_sigaction指示的函数。
@@ -1590,21 +1621,5 @@ sigsuspend函数的执行过程如下:
 当主函数访问临界资源时，通常需要加锁，如果主函数在访问临界区时，给临界资源上锁，此时发生了一个信号，那么转入信号处理函数，如果此时信号处理函数也对临界资源进行访问，那么信号处理函数也会加锁，由于主程序持有锁，信号处理程序等待主程序释放锁。又因为信号处理函数已经抢占了主函数，因此，主函数在信号处理函数结束之前不能运行。因此，必然造成死锁。
 
 */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
