@@ -33,8 +33,8 @@ typedef struct ngx_pool_cleanup_s  ngx_pool_cleanup_t;
 
 struct ngx_pool_cleanup_s {
     ngx_pool_cleanup_pt   handler;
-    void                 *data;
-    ngx_pool_cleanup_t   *next;
+    void                 *data;/*ngx_pool_cleanup_add 方法的size>0 时data 不为NULL，此时改写data指向的内存 用于为handler 指向的方法传递必要的参数*/
+    ngx_pool_cleanup_t   *next;//ngx_pool_cleanup_add  方法设置next 成员 用于将当前ngx_pool_cleanup_t 添加到ngx_pool_t的cleanup 链表中
 };
 
 
@@ -47,21 +47,21 @@ struct ngx_pool_large_s {
 
 
 typedef struct {
-    u_char               *last;
-    u_char               *end;
+    u_char               *last; //未分配的空闲内存首地址
+    u_char               *end;// 小块内存池尾部
     ngx_pool_t           *next;
-    ngx_uint_t            failed;
+    ngx_uint_t            failed; //剩余空间不足时 failed ++ failed 大于4 后 ngx__pool_s 的current 将移动至下一个小块内存池
 } ngx_pool_data_t;
 
 
 struct ngx_pool_s {
-    ngx_pool_data_t       d;
-    size_t                max;
-    ngx_pool_t           *current;
+    ngx_pool_data_t       d; //描述小块内存，当分配小块内存时剩余的预分配空间不足时再分配一个ngx_pool_t 会通过d中next成员构成单链表
+    size_t                max;//大小内存的分配界限
+    ngx_pool_t           *current;// 多个小块内存池构成链表时 current指向分配内存时遍历的第一个小块内存池
     ngx_chain_t          *chain;
-    ngx_pool_large_t     *large;
-    ngx_pool_cleanup_t   *cleanup;
-    ngx_log_t            *log;
+    ngx_pool_large_t     *large;//大块内存直接在进程的堆中分配，为了能够在销毁内存池时同时释放大块内存就把每一次分配的大块内存通过ngx_pool_large_t 组成单链表挂在large成员上
+    ngx_pool_cleanup_t   *cleanup;//所有待清理的资源以 ngx_pool_cleanup_t 对象构成单链表挂在 cleanup成员上
+    ngx_log_t            *log;// 内存池执行中输出日志的对象
 };
 
 
