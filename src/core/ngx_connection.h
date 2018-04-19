@@ -118,60 +118,79 @@ typedef enum {
 
 struct ngx_connection_s {
     void               *data;
-    ngx_event_t        *read;
-    ngx_event_t        *write;
+	/*连接未使用时 data成员充当连接池中空闲连接链表中的next指针。当连接被使用时data的意义有使用他的模块决定
+	HTTP框架中data指向ngx_http_request_t 请求*/
+    ngx_event_t        *read; //读事件
+    ngx_event_t        *write; //写事件
 
-    ngx_socket_t        fd;
+    ngx_socket_t        fd; //套接字句柄
 
-    ngx_recv_pt         recv;
-    ngx_send_pt         send;
-    ngx_recv_chain_pt   recv_chain;
-    ngx_send_chain_pt   send_chain;
+    ngx_recv_pt         recv; //直接接受网络流的方法
+    ngx_send_pt         send; //直接发送网络字符流方法
+    ngx_recv_chain_pt   recv_chain; //以ngx_chain_t 链表为参数来接受网络字符流的方法
+    ngx_send_chain_pt   send_chain;//以ngx_chain_t 链表为参数来发送网络字符流的方法
 
-    ngx_listening_t    *listening;
+    ngx_listening_t    *listening; //连接对应的ngx_listening_t 监听对象，此连接由listening 监听端口的事件建立
 
-    off_t               sent;
+    off_t               sent; //该连接已经发送的字节数
 
-    ngx_log_t          *log;
+    ngx_log_t          *log;//log 对象
 
     ngx_pool_t         *pool;
+	/*内存池 ，一般在accept 一个新连接时 会创建一个内存池，而在连接结束时销毁内存池
+	这里所说的连接是指成功建立的tcp连接 所有的ngx_connection_t 结构体都是预先分配的，这个内存池的大小将由上面的listening 
+	监听对象中的poll_size成员决定*/
 
-    struct sockaddr    *sockaddr;
-    socklen_t           socklen;
-    ngx_str_t           addr_text;
+    struct sockaddr    *sockaddr;//连接客户端的sockaddr结构体
+    socklen_t           socklen; //结构体长度
+    ngx_str_t           addr_text;// 字符串IP
 
 #if (NGX_SSL)
     ngx_ssl_connection_t  *ssl;
 #endif
 
-    struct sockaddr    *local_sockaddr;
+    struct sockaddr    *local_sockaddr;//本机监听端口对应的sockaddr结构体 也就是listening 监听对象中的sockaddr 成员
 
-    ngx_buf_t          *buffer;
+    ngx_buf_t          *buffer;//用于接受、缓存客户端发来的字符流，每个事件消费模块可以自由决定从连接池中分配多大的空间给buffer
 
     ngx_queue_t         queue;
+	/*用来将当前连接以双向链表元素的形似和添加到ngx_cycle_t 核心结构体的reusable_connections_queue 双向链表中
+    表示可以重用的连接*/
 
     ngx_atomic_uint_t   number;
-
-    ngx_uint_t          requests;
+	/*连接使用次数 ngx_connection_t 每次建立一条客户端的连接或者主动向后端服务器发起连接 该字段都会+1*/
+    ngx_uint_t          requests; //处理的请求次数
+	
 
     unsigned            buffered:8;
+	/*缓存中的业务类型 任何事件消费模块都可以自定义需要的标志位，buffered 有8位最多可以表示8中不同的业务
+	buffered 的低四位要慎用在实际发送响应的ngx_http_write_filter_module过滤模块中，低4位标志位为1则意味着
+	Nginx会一直认为有HTTP模块还需要处理这个请求，必须等待HTTP模块将低4位全置为0才会正常结束请求*/
 
     unsigned            log_error:3;     /* ngx_connection_log_error_e */
+	/*该连接记录日志的级别 占用3位 目前只定义了5个值 由ngx_connection_log_error_e 枚举类型定义*/
 
     unsigned            single_connection:1;
-    unsigned            unexpected_eof:1;
-    unsigned            timedout:1;
-    unsigned            error:1;
+	/*1：独立连接 从客户端发起的连接 2：依靠其他连接行为而建立起来的非独立连接 upstream 机制向后端服务器建立起来的连接*/
+    unsigned            unexpected_eof:1;//值为1 不期待字符流结束 目前无意义
+	
+    unsigned            timedout:1;//1：表示连接超时
+    unsigned            error:1;	//1：连接处理过程出现错误
     unsigned            destroyed:1;
+	/*标志位 为1时表示TCP连接已经销毁，ngx_connection_t结构体仍然存在，但其对应的套接字、内存池等已经不可用*/
 
-    unsigned            idle:1;
-    unsigned            reusable:1;
-    unsigned            close:1;
+    unsigned            idle:1;//标志位 1时表示连接处于空闲状态，如keepalive 请求中两次请求之间的状态
+    unsigned            reusable:1;//标志位 1时表示连接可重用 和queue配合使用
+    unsigned            close:1;//标志位 1 表示连接已经关闭
 
-    unsigned            sendfile:1;
+    unsigned            sendfile:1;//标志位，为1时表示正在将文件数据发往连接的另一端
     unsigned            sndlowat:1;
+	/*标志位，如果为1，则表示只有在连接套接字对应的发送缓冲区必须满足最低设置的大小阈值时，事件驱动模块才会分发该事件。
+	这与上文介绍过的ngx_handle_write_event方法中的lowat参数是对应的*/
     unsigned            tcp_nodelay:2;   /* ngx_connection_tcp_nodelay_e */
+	/*标志位，表示如何使用TCP的 nodelay特性 值为ngx_connection_tcp_nodelay_e定义的枚举类型*/
     unsigned            tcp_nopush:2;    /* ngx_connection_tcp_nopush_e */
+	/*标志位，表示如何使用TCP的nopush特性 值在ngx_connection_tcp_nopush_e 枚举中定义*/
 
 #if (NGX_HAVE_IOCP)
     unsigned            accept_context_updated:1;
@@ -179,7 +198,9 @@ struct ngx_connection_s {
 
 #if (NGX_HAVE_AIO_SENDFILE)
     unsigned            aio_sendfile:1;
+	/*标志位，为1时表示使用异步I/O的方式将磁盘上文件发送给网络连接的另一端*/
     ngx_buf_t          *busy_sendfile;
+	/*使用异步I/O方式发送的文件，busy_sendfile缓冲区保存待发送文件的信息*/
 #endif
 
 #if (NGX_THREADS)
