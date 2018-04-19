@@ -279,7 +279,10 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     }
 }
 
-
+/*	将读事件添加到事件驱动模块中
+	rev:要操作的事件
+	flags:事件驱动方式，epoll驱动机制为列 flags取值为0时 或者为NGX_CLOSE_EVENT，nginx 主要工作在ET模式下 一般忽略flags参数
+*/
 ngx_int_t
 ngx_handle_read_event(ngx_event_t *rev, ngx_uint_t flags)
 {
@@ -347,7 +350,11 @@ ngx_handle_read_event(ngx_event_t *rev, ngx_uint_t flags)
     return NGX_OK;
 }
 
-
+/*	
+	将写事件添加到事件驱动模型中
+	wev:操作的事件
+	lowat:只有当连接对应的套接字缓冲区必须有lowat 大小的可用空间时 才处理这个可写事件
+*/
 ngx_int_t
 ngx_handle_write_event(ngx_event_t *wev, size_t lowat)
 {
