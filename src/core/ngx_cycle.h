@@ -35,7 +35,7 @@ struct ngx_shm_zone_s {
 
 
 struct ngx_cycle_s {
-    void                  ****conf_ctx;	/*保存所有模块配置机项结构体的指针*/
+    void                  ****conf_ctx;	/*保存所有模块配置项结构体的指针*/
     ngx_pool_t               *pool;	/*内存池*/
 
     ngx_log_t                *log;	/*日志模块中提供生成基本日志对象的功能 这里的log实际上是在还没有执行ngx_init_cycle方法前，也就是在还没有解析配置前

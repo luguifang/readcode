@@ -124,6 +124,7 @@ static ngx_command_t  ngx_event_core_commands[] = {
       0,
       0,
       NULL },
+      /*连接池大小，也就是每个work进程中支持的tcp最大连接数 与下面的connections相同*/
 
     { ngx_string("connections"),
       NGX_EVENT_CONF|NGX_CONF_TAKE1,
@@ -138,6 +139,7 @@ static ngx_command_t  ngx_event_core_commands[] = {
       0,
       0,
       NULL },
+    /*确定选择哪一个事件模块作为事件驱动机制*/
 
     { ngx_string("multi_accept"),
       NGX_EVENT_CONF|NGX_CONF_FLAG,
@@ -145,6 +147,8 @@ static ngx_command_t  ngx_event_core_commands[] = {
       0,
       offsetof(ngx_event_conf_t, multi_accept),
       NULL },
+      /*对应于事件结构体的available字段。对于epoll事件驱动模式来说，意味着在接收到一个新连接事件时，调用
+		accept以尽可能多地接收连接*/
 
     { ngx_string("accept_mutex"),
       NGX_EVENT_CONF|NGX_CONF_FLAG,
@@ -152,6 +156,7 @@ static ngx_command_t  ngx_event_core_commands[] = {
       0,
       offsetof(ngx_event_conf_t, accept_mutex),
       NULL },
+      /*确定是否使用accept_mutex负载均衡锁，默认为开启*/
 
     { ngx_string("accept_mutex_delay"),
       NGX_EVENT_CONF|NGX_CONF_TAKE1,
@@ -159,13 +164,14 @@ static ngx_command_t  ngx_event_core_commands[] = {
       0,
       offsetof(ngx_event_conf_t, accept_mutex_delay),
       NULL },
-
+	/*启用accept_mutex负载均衡锁后，延迟accept_mutex_delay毫秒后再试图处理新连接事件*/
     { ngx_string("debug_connection"),
       NGX_EVENT_CONF|NGX_CONF_TAKE1,
       ngx_event_debug_connection,
       0,
       0,
       NULL },
+      /*需要对来自指定IP的TCP连接打印debug级别的调试日志*/
 
       ngx_null_command
 };
@@ -896,7 +902,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_event_module_t   *m;
 
     /* count the number of the event modules and set up their indices */
-
+	/*初始化所有事件模块的ctx_index 序号*/
     ngx_event_max_module = 0;
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_EVENT_MODULE) {
@@ -910,7 +916,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
-
+	// 分配指针数组 存储所有事件模块生成的配置项结构指针
     *ctx = ngx_pcalloc(cf->pool, ngx_event_max_module * sizeof(void *));
     if (*ctx == NULL) {
         return NGX_CONF_ERROR;
@@ -926,7 +932,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         m = ngx_modules[i]->ctx;
 
         if (m->create_conf) {
-            (*ctx)[ngx_modules[i]->ctx_index] = m->create_conf(cf->cycle);
+            (*ctx)[ngx_modules[i]->ctx_index] = m->create_conf(cf->cycle);//调用所有事件的create_conf 方法
             if ((*ctx)[ngx_modules[i]->ctx_index] == NULL) {
                 return NGX_CONF_ERROR;
             }
@@ -937,7 +943,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     cf->ctx = ctx;
     cf->module_type = NGX_EVENT_MODULE;
     cf->cmd_type = NGX_EVENT_CONF;
-
+	//为所有事件模块解析nginx.conf 配置文件
     rv = ngx_conf_parse(cf, NULL);
 
     *cf = pcf;
@@ -953,7 +959,7 @@ ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         m = ngx_modules[i]->ctx;
 
         if (m->init_conf) {
-            rv = m->init_conf(cf->cycle, (*ctx)[ngx_modules[i]->ctx_index]);
+            rv = m->init_conf(cf->cycle, (*ctx)[ngx_modules[i]->ctx_index]);//调用所有模块的init_conf 方法
             if (rv != NGX_CONF_OK) {
                 return rv;
             }
