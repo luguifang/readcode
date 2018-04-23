@@ -513,14 +513,20 @@ extern ngx_os_io_t  ngx_io;
 
 typedef struct {
     ngx_uint_t    connections;
+	/*连接池大小*/
     ngx_uint_t    use;
+	/*选用的事件模块在所有事件模块中序号也就是ngx_module_t 中的ctx_index 成员*/
 
     ngx_flag_t    multi_accept;
+	/*标志位，如果为1，则表示在接收到一个新连接事件时，一次性建立尽可能多的连接*/
     ngx_flag_t    accept_mutex;
+	/*标志位为1时表示启用负载均衡*/
 
     ngx_msec_t    accept_mutex_delay;
+	/*负载均衡锁会使有些worker进程在拿不到锁时延迟建立新连接，accept_mutex_delay就是这段延迟时间的长度*/
 
     u_char       *name;
+	/*所选用事件模块的名字，它与use成员是匹配的*/
 
 #if (NGX_DEBUG)
     ngx_array_t   debug_connection;

@@ -439,7 +439,7 @@ ngx_handle_write_event(ngx_event_t *wev, size_t lowat)
     return NGX_OK;
 }
 
-
+/*初始化了一些变量，尤其是ngx_http_stub_status_module统计模块使用的一些原子性的统计变量*/
 static ngx_int_t
 ngx_event_module_init(ngx_cycle_t *cycle)
 {
@@ -580,6 +580,10 @@ void
 ngx_timer_signal_handler(int signo)
 {
     ngx_event_timer_alarm = 1;
+	/*全局变量 为1时表示需要更新时间
+	在ngx_event_actions_t的process_events方法中，每一个事件驱动模块都需要在
+	ngx_event_timer_alarm为1时调用ngx_time_update方法更新系统时间，在更新
+	系统结束后需要将ngx_event_timer_alarm设为0*/
 
 #if 1
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_cycle->log, 0, "timer signal");
@@ -588,7 +592,7 @@ ngx_timer_signal_handler(int signo)
 
 #endif
 
-
+/*详见 doc 中的word 文档：2.3.9 ngx_event_core_module 事件模块*/
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
 {
@@ -602,7 +606,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
     ecf = ngx_event_get_conf(cycle->conf_ctx, ngx_event_core_module);
-
+	//当配置中配种了 accept_mutex负载均衡锁 并且使用了master-work 模式且work进程数大于1 才会真正使用负载均衡锁
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex) {
         ngx_use_accept_mutex = 1;
         ngx_accept_mutex_held = 0;
@@ -618,7 +622,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         return NGX_ERROR;
     }
 #endif
-
+	/*初始化红黑树实现的定时器*/
     if (ngx_event_timer_init(cycle->log) == NGX_ERROR) {
         return NGX_ERROR;
     }
@@ -633,7 +637,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
         module = ngx_modules[m]->ctx;
-
+		/*初始化事件驱动模块（use配置项指定的事件模块）*/
         if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK) {
             /* fatal */
             exit(2);
@@ -643,15 +647,25 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     }
 
 #if !(NGX_WIN32)
-
+	/*如果nginx.conf配置文件中设置了timer_resolution配置项，即表明需要控制时间精度，这时会调用
+	setitimer方法，设置时间间隔为timer_resolution毫秒来回调ngx_timer_signal_handler方法*/
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT)) {
         struct sigaction  sa;
+		/*struct sigaction 类型用来描述对信号的处理
+		主要用于sigaction信号安装和sigqueue信号发送时*/
         struct itimerval  itv;
 
         ngx_memzero(&sa, sizeof(struct sigaction));
         sa.sa_handler = ngx_timer_signal_handler;
         sigemptyset(&sa.sa_mask);
-
+		/*
+		include <signal.h>
+ 		int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
+ 		◆ signum：要操作的信号。
+ 		◆ act：要设置的对信号的新处理方式，指向sigaction结构的指针。
+ 		◆ oldact：原来对信号的处理方式。
+		 ◆ 返回值：0 表示成功，-1 表示有错误发生。
+		*/
         if (sigaction(SIGALRM, &sa, NULL) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "sigaction(SIGALRM) failed");
@@ -668,7 +682,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
                           "setitimer() failed");
         }
     }
-
+	//epoll事件模型
     if (ngx_event_flags & NGX_USE_FD_EVENT) {
         struct rlimit  rlmt;
 
@@ -688,7 +702,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     }
 
 #endif
-
+	// 预分配连接池
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
     if (cycle->connections == NULL) {
@@ -696,7 +710,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     }
 
     c = cycle->connections;
-
+	//预分配ngx_event_t事件数组作为读事件池
     cycle->read_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                    cycle->log);
     if (cycle->read_events == NULL) {
@@ -712,7 +726,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         rev[i].own_lock = &c[i].lock;
 #endif
     }
-
+	//预分配ngx_event_t事件数组作为写事件池
     cycle->write_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                     cycle->log);
     if (cycle->write_events == NULL) {
@@ -750,7 +764,9 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     cycle->free_connection_n = cycle->connection_n;
 
     /* for each listening socket */
-
+	/*为所有ngx_listening_t监听对象中的connection成员分配连接，同时对监听端口的
+	读事件设置处理方法为ngx_event_accept，也就是说，有新连接事件
+	时将调用ngx_event_accept方法建立新连接*/
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 

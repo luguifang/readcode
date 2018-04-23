@@ -108,9 +108,13 @@ struct ngx_open_file_s {
 #define NGX_MODULE_V1          0, 0, 0, 0, 0, 0, 1
 #define NGX_MODULE_V1_PADDING  0, 0, 0, 0, 0, 0, 0, 0
 
+//通用模块接口
 struct ngx_module_s {
     ngx_uint_t            ctx_index;
+	/*ctx_index表明了模块在相同类型模块中的顺序*/
     ngx_uint_t            index;
+	/*index是所有模块在ngx_modules.c文件的ngx_modules数组中的序号，它与
+	ngx_modules数组中所有模块的顺序是一致的*/
 
     ngx_uint_t            spare0;
     ngx_uint_t            spare1;
