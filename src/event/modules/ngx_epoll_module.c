@@ -84,7 +84,9 @@ int eventfd(u_int initval)
 #endif
 #endif
 
-
+/*配置结构体
+events是调用epoll_wait方法时传入的第3个参数maxevents，而第2个参数events数
+组的大小也是由它决定的*/
 typedef struct {
     ngx_uint_t  events;
     ngx_uint_t  aio_requests;
@@ -134,6 +136,9 @@ static ngx_command_t  ngx_epoll_commands[] = {
       0,
       offsetof(ngx_epoll_conf_t, events),
       NULL },
+      /*在调用epoll_wait 时，将由第2个和第3个参数告诉Linux内核一次最多可返回多少个事件
+		这个配置项表示调用一次epoll_wait时最多可以返回的事件数，当然它也会预分配那么多
+		epoll_event 结构体用于存储事件*/
 
     { ngx_string("worker_aio_requests"),
       NGX_EVENT_CONF|NGX_CONF_TAKE1,
@@ -141,6 +146,8 @@ static ngx_command_t  ngx_epoll_commands[] = {
       0,
       offsetof(ngx_epoll_conf_t, aio_requests),
       NULL },
+      /*在开启异步I/O且使用io_setup系统调用初始化异步I/O上下文环境时
+	   初始化分配的异步I/O事件个数*/
 
       ngx_null_command
 };
@@ -293,7 +300,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
     epcf = ngx_event_get_conf(cycle->conf_ctx, ngx_epoll_module);
 
     if (ep == -1) {
-        ep = epoll_create(cycle->connection_n / 2);
+        ep = epoll_create(cycle->connection_n / 2);//创建epoll对象
 
         if (ep == -1) {
             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
@@ -303,7 +310,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 
 #if (NGX_HAVE_FILE_AIO)
 
-        ngx_epoll_aio_init(cycle, epcf);
+        ngx_epoll_aio_init(cycle, epcf);//异步io
 
 #endif
     }
@@ -314,7 +321,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
         }
 
         event_list = ngx_alloc(sizeof(struct epoll_event) * epcf->events,
-                               cycle->log);
+                               cycle->log);//创建event_list 数组用于在epoll_wait调用中接收事件的参数
         if (event_list == NULL) {
             return NGX_ERROR;
         }
@@ -322,9 +329,9 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 
     nevents = epcf->events;
 
-    ngx_io = ngx_os_io;
+    ngx_io = ngx_os_io;//指明读写io的方法
 
-    ngx_event_actions = ngx_epoll_module_ctx.actions;
+    ngx_event_actions = ngx_epoll_module_ctx.actions;//设置ngx_event_actions接口
 
 #if (NGX_HAVE_CLEAR_EVENT)
     ngx_event_flags = NGX_USE_CLEAR_EVENT
@@ -333,6 +340,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 #endif
                       |NGX_USE_GREEDY_EVENT
                       |NGX_USE_EPOLL_EVENT;
+	//NGX_USE_CLEAR_EVENT 宏告诉nginx 使用ET模式
 
     return NGX_OK;
 }
@@ -405,7 +413,7 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     }
 
     if (e->active) {
-        op = EPOLL_CTL_MOD;
+        op = EPOLL_CTL_MOD;//如果事件是活跃的则操作为修改 否则为添加操作
         events |= prev;
 
     } else {
@@ -413,18 +421,19 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     }
 
     ee.events = events | (uint32_t) flags;
+	/*ptr成员存储的是ngx_connection_t 连接*/
     ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
-
+	
     ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0,
                    "epoll add event: fd:%d op:%d ev:%08XD",
                    c->fd, op, ee.events);
-
+	/*调用epoll_ctl 方法向epoll中添加事件或者在epoll修改事件*/
     if (epoll_ctl(ep, op, c->fd, &ee) == -1) {
         ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_errno,
                       "epoll_ctl(%d, %d) failed", op, c->fd);
         return NGX_ERROR;
     }
-
+	/*置1 表示当前事件活跃*/
     ev->active = 1;
 #if 0
     ev->oneshot = (flags & NGX_ONESHOT_EVENT) ? 1 : 0;
@@ -569,13 +578,13 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "epoll timer: %M", timer);
-
+	/*调用epool获取事件，注意timer参数是在process_events 调用的时候传入的*/
     events = epoll_wait(ep, event_list, (int) nevents, timer);
 
     err = (events == -1) ? ngx_errno : 0;
 
     if (flags & NGX_UPDATE_TIME || ngx_event_timer_alarm) {
-        ngx_time_update();
+        ngx_time_update();//nginx 的时间管理 更新时间
     }
 
     if (err) {
@@ -607,15 +616,16 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
     }
 
     ngx_mutex_lock(ngx_posted_events_mutex);
-
+    /*遍历所有从epoll_wait 返回的事件*/
     for (i = 0; i < events; i++) {
         c = event_list[i].data.ptr;
-
+		/*将地址最后一位取出用instance 标识*/
         instance = (uintptr_t) c & 1;
+		/*将ngx_connction_t 的地址值还原成真正的地址值*/
         c = (ngx_connection_t *) ((uintptr_t) c & (uintptr_t) ~1);
 
         rev = c->read;
-
+		/*判断是否为过期事件*/
         if (c->fd == -1 || rev->instance != instance) {
 
             /*
@@ -627,7 +637,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                            "epoll: stale event %p", c);
             continue;
         }
-
+		/*取出事件类型*/
         revents = event_list[i].events;
 
         ngx_log_debug3(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
@@ -659,7 +669,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 
             revents |= EPOLLIN|EPOLLOUT;
         }
-
+		/*如果是读事件且改事件活跃*/
         if ((revents & EPOLLIN) && rev->active) {
 
             if ((flags & NGX_POST_THREAD_EVENTS) && !rev->accept) {
@@ -668,18 +678,21 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             } else {
                 rev->ready = 1;
             }
-
+			/*flags 中含有NGX_POST_EVENTS 表示改事件需要延后处理*/
             if (flags & NGX_POST_EVENTS) {
+				/*如果要在post队列中延后处理该事件，首先要判断它是新连接事件还是普通事件，
+					以决定把它加入到ngx_posted_accept_events队列或者ngx_posted_events队列中*/
                 queue = (ngx_event_t **) (rev->accept ?
                                &ngx_posted_accept_events : &ngx_posted_events);
 
                 ngx_locked_post_event(rev, queue);
 
             } else {
+				/*调用读事件的回调方法*/
                 rev->handler(rev);
             }
         }
-
+		/*取出写事件 一下和读事件类似*/
         wev = c->write;
 
         if ((revents & EPOLLOUT) && wev->active) {
@@ -702,8 +715,9 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             } else {
                 wev->ready = 1;
             }
-
+			
             if (flags & NGX_POST_EVENTS) {
+				/*将事件添加到POST队列延后处理*/
                 ngx_locked_post_event(wev, &ngx_posted_events);
 
             } else {
