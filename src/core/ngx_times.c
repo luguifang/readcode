@@ -22,13 +22,13 @@
 
 static ngx_uint_t        slot;
 static ngx_atomic_t      ngx_time_lock;
-
-volatile ngx_msec_t      ngx_current_msec;
-volatile ngx_time_t     *ngx_cached_time;
-volatile ngx_str_t       ngx_cached_err_log_time;
-volatile ngx_str_t       ngx_cached_http_time;
-volatile ngx_str_t       ngx_cached_http_log_time;
-volatile ngx_str_t       ngx_cached_http_log_iso8601;
+/*volatile 用到这个变量时必须每次都小心地重新读取这个变量的值，而不是使用保存在寄存器里的备份*/
+volatile ngx_msec_t      ngx_current_msec;/*格林威治时间到当前的毫秒数*/
+volatile ngx_time_t     *ngx_cached_time;/*结构体形式的当前时间*/
+volatile ngx_str_t       ngx_cached_err_log_time;/*用于记录error_log 的时间字符串格式类似于2018/05/01 12:00:00*/
+volatile ngx_str_t       ngx_cached_http_time;/*http 相关的当前时间字符串 Mon,28 Sep 2018 21:00:00 GMT*/
+volatile ngx_str_t       ngx_cached_http_log_time;/*用于记录HTTP日志当前时间字符串 格式如：28/Sep/2018:12:00:00 +0600*/
+volatile ngx_str_t       ngx_cached_http_log_iso8601;/*ISO 8601标准格式记录下的字符串形式的当前时间*/
 
 #if !(NGX_WIN32)
 
@@ -55,7 +55,7 @@ static u_char            cached_http_log_iso8601[NGX_TIME_SLOTS]
 static char  *week[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 static char  *months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-
+/*初始化进程中缓存的时间变量，并且第一次根据gettimeofday调用刷新缓存时间*/
 void
 ngx_time_init(void)
 {
@@ -69,7 +69,7 @@ ngx_time_init(void)
     ngx_time_update();
 }
 
-
+/*通过调用gettimeofday 以系统时间更新缓存时间*/
 void
 ngx_time_update(void)
 {
@@ -79,7 +79,7 @@ ngx_time_update(void)
     ngx_uint_t       msec;
     ngx_time_t      *tp;
     struct timeval   tv;
-
+   //!!尝试加锁 需要详细了解原子操作机制
     if (!ngx_trylock(&ngx_time_lock)) {
         return;
     }
@@ -89,7 +89,7 @@ ngx_time_update(void)
     sec = tv.tv_sec;
     msec = tv.tv_usec / 1000;
 
-    ngx_current_msec = (ngx_msec_t) sec * 1000 + msec;
+    ngx_current_msec = (ngx_msec_t) sec * 1000 + msec;//1970年1月1日到现在的的毫秒数
 
     tp = &cached_time[slot];
 
@@ -303,7 +303,11 @@ const char *tm_zone; /*当前时区的名字(与环境变量TZ有关)
 #endif
 */
 
-
+/*
+	function:由秒数获取当前时间 填充tm 结构体
+	t:格林威治时间距离现在的秒数 一般由gettimeofday 获取到
+	tp: tm 结构体类型指针
+*/
 void
 ngx_gmtime(time_t t, ngx_tm_t *tp)
 {
@@ -314,17 +318,17 @@ ngx_gmtime(time_t t, ngx_tm_t *tp)
 
     n = (ngx_uint_t) t;
 
-    days = n / 86400;
+    days = n / 86400;//一天一夜为86400秒
 
     /* January 1, 1970 was Thursday */
 
-    wday = (4 + days) % 7;
+    wday = (4 + days) % 7;//一周的第几天
 
     n %= 86400;
-    hour = n / 3600;
+    hour = n / 3600; // 小时
     n %= 3600;
-    min = n / 60;
-    sec = n % 60;
+    min = n / 60; //分钟
+    sec = n % 60; //秒数
 
     /*
      * the algorithm based on Gauss' formula,
@@ -341,7 +345,7 @@ ngx_gmtime(time_t t, ngx_tm_t *tp)
      * becomes negative.
      */
 
-    year = (days + 2) * 400 / (365 * 400 + 100 - 4 + 1);
+    year = (days + 2) * 400 / (365 * 400 + 100 - 4 + 1);//计算那一年
 
     yday = days - (365 * year + year / 4 - year / 100 + year / 400);
 
@@ -359,7 +363,7 @@ ngx_gmtime(time_t t, ngx_tm_t *tp)
      *     mon = (yday + 31) * 20 / 612
      */
 
-    mon = (yday + 31) * 10 / 306;
+    mon = (yday + 31) * 10 / 306;//计算那个月
 
     /* the Gauss' formula that evaluates days before the month */
 
@@ -396,7 +400,10 @@ ngx_gmtime(time_t t, ngx_tm_t *tp)
     tp->ngx_tm_wday = (ngx_tm_wday_t) wday;
 }
 
-
+/*
+  function:如果when表示当前时间秒数当他合并到实际时间后已经超过当前时间，那么就返回when合并到实际时间后的秒数
+  如果合并时间早于时间时间则返回下一天同一时刻的时间，他目前仅具有与expires配置项相关的缓存过期功能
+*/
 time_t
 ngx_next_time(time_t when)
 {

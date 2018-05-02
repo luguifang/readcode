@@ -12,11 +12,11 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 
-
+/*缓存时间变量结构体*/
 typedef struct {
-    time_t      sec;
-    ngx_uint_t  msec;
-    ngx_int_t   gmtoff;
+    time_t      sec; /*格林威治时间 表示到现在的秒数*/
+    ngx_uint_t  msec; /*sec 的毫秒偏移量*/
+    ngx_int_t   gmtoff;/*时区*/
 } ngx_time_t;
 
 
