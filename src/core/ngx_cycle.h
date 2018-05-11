@@ -62,7 +62,7 @@ struct ngx_cycle_s {
     ngx_uint_t                reusable_connections_n;
 
     ngx_array_t               listening;	/*动态数组，每个数组元素存储着ngx_listening_t成员，表示监听端口及相关的参数*/
-    ngx_array_t               paths;	/*动态数组容器，它保存着Nginx所有要操作的目录。如果有目录不存在，则会试图创建，而创建目录失败将会导致
+    ngx_array_t               pathes;	/*动态数组容器，它保存着Nginx所有要操作的目录。如果有目录不存在，则会试图创建，而创建目录失败将会导致
 									Nginx启动失败。例如，上传文件的临时目录也在pathes中，如果没有权限创建，则会导致Nginx无法启动*/
 
     ngx_array_t               config_dump;
