@@ -15,8 +15,8 @@ ngx_mutex_t  *ngx_event_timer_mutex;
 #endif
 
 
-ngx_thread_volatile ngx_rbtree_t  ngx_event_timer_rbtree;
-static ngx_rbtree_node_t          ngx_event_timer_sentinel;
+ngx_thread_volatile ngx_rbtree_t  ngx_event_timer_rbtree;/*事件超时时间的大小组成了二叉排序树*/
+static ngx_rbtree_node_t          ngx_event_timer_sentinel;/*红黑树哨兵节点*/
 
 /*
  * the event timer rbtree may contain the duplicate keys, however,

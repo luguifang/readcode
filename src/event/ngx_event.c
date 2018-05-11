@@ -54,7 +54,7 @@ ngx_uint_t            ngx_use_accept_mutex;
 ngx_uint_t            ngx_accept_events;
 ngx_uint_t            ngx_accept_mutex_held;
 ngx_msec_t            ngx_accept_mutex_delay;
-ngx_int_t             ngx_accept_disabled;
+ngx_int_t             ngx_accept_disabled;//负载均衡相关
 ngx_file_t            ngx_accept_mutex_lock_file;
 
 
@@ -239,6 +239,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
             }
 
             if (ngx_accept_mutex_held) {
+				//开始处理新连接事件 falgs 加入NGX_POST_EVENTS 标志位
                 flags |= NGX_POST_EVENTS;
 
             } else {

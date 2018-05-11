@@ -18,11 +18,11 @@ static void ngx_close_accepted_connection(ngx_connection_t *c);
 void
 ngx_event_accept(ngx_event_t *ev)
 {
-    socklen_t          socklen;
+    socklen_t          socklen;/*accept第三个参数 等同于int*/ 
     ngx_err_t          err;
     ngx_log_t         *log;
     ngx_socket_t       s;
-    ngx_event_t       *rev, *wev;
+    ngx_event_t       *rev, *wev;//读写事件
     ngx_listening_t   *ls;
     ngx_connection_t  *c, *lc;
     ngx_event_conf_t  *ecf;
@@ -58,7 +58,7 @@ ngx_event_accept(ngx_event_t *ev)
             s = accept(lc->fd, (struct sockaddr *) sa, &socklen);
         }
 #else
-        s = accept(lc->fd, (struct sockaddr *) sa, &socklen);
+        s = accept(lc->fd, (struct sockaddr *) sa, &socklen);//试图建立新连接，如果没有准备好的新连接直接返回
 #endif
 
         if (s == -1) {
@@ -105,9 +105,9 @@ ngx_event_accept(ngx_event_t *ev)
 #endif
 
         ngx_accept_disabled = ngx_cycle->connection_n / 8
-                              - ngx_cycle->free_connection_n;
+                              - ngx_cycle->free_connection_n;//设置负载均衡阈值
 
-        c = ngx_get_connection(s, ev->log);
+        c = ngx_get_connection(s, ev->log);//在连接池中获取一个ngx_connection_t结构
 
         if (c == NULL) {
             if (ngx_close_socket(s) == -1) {
@@ -122,7 +122,7 @@ ngx_event_accept(ngx_event_t *ev)
         (void) ngx_atomic_fetch_add(ngx_stat_active, 1);
 #endif
 
-        c->pool = ngx_create_pool(ls->pool_size, ev->log);
+        c->pool = ngx_create_pool(ls->pool_size, ev->log);//为连接创建内存池
         if (c->pool == NULL) {
             ngx_close_accepted_connection(c);
             return;
@@ -143,7 +143,7 @@ ngx_event_accept(ngx_event_t *ev)
         }
 
         /* set a blocking mode for aio and non-blocking mode for others */
-
+		//设置新连接的套接字属性
         if (ngx_inherited_nonblocking) {
             if (ngx_event_flags & NGX_USE_AIO_EVENT) {
                 if (ngx_blocking(s) == -1) {
@@ -270,7 +270,8 @@ ngx_event_accept(ngx_event_t *ev)
 
         ngx_log_debug3(NGX_LOG_DEBUG_EVENT, log, 0,
                        "*%d accept: %V fd:%d", c->number, &c->addr_text, s);
-
+		/*将这个新连接对应的读事件添加到epoll等事件驱动模块中，这样，在这个连接上如
+		果接收到用户请求epoll_wait，就会收集到这个事件*/
         if (ngx_add_conn && (ngx_event_flags & NGX_USE_EPOLL_EVENT) == 0) {
             if (ngx_add_conn(c) == NGX_ERROR) {
                 ngx_close_accepted_connection(c);
@@ -281,7 +282,7 @@ ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
-        ls->handler(c);
+        ls->handler(c);//处理连接
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {
             ev->available--;
@@ -294,23 +295,28 @@ ngx_event_accept(ngx_event_t *ev)
 ngx_int_t
 ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
 {
+	//使用进程间同步锁，尝试获取ngx_accept_mutex 锁，非阻塞获取，返回1 成功拿到锁，0失败立刻返回
     if (ngx_shmtx_trylock(&ngx_accept_mutex)) {
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                        "accept mutex locked");
-
+		//ngx_accept_mutex_held 是个标志位当其为1时表示已经获得锁
         if (ngx_accept_mutex_held
             && ngx_accept_events == 0
             && !(ngx_event_flags & NGX_USE_RTSIG_EVENT))
         {
+        	//ngx_accept_mutex 之前已经获取到了立刻返回
             return NGX_OK;
         }
-
+		//将所有连接的读事件添加到epoll等事件驱动模块中
         if (ngx_enable_accept_events(cycle) == NGX_ERROR) {
+			//如若添加失败失败ngx_accept_mutex 锁
             ngx_shmtx_unlock(&ngx_accept_mutex);
             return NGX_ERROR;
         }
-
+		/*ngx_enable_accept_events方法的调用，当前进程的事件驱动模块已经开始监听所有的端口，这时需要把
+		  ngx_accept_mutex_held标志位置为1，方便本进程的其他模块了解它目前已经获取到了锁*/
+		  
         ngx_accept_events = 0;
         ngx_accept_mutex_held = 1;
 
@@ -319,8 +325,10 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "accept mutex lock failed: %ui", ngx_accept_mutex_held);
-
+	
+	//如果获取锁失败 ngx_accept_mutex_held 为1时需要做一下处理
     if (ngx_accept_mutex_held) {
+		//将所有监听连接的读事件从事件驱动模块中移除
         if (ngx_disable_accept_events(cycle) == NGX_ERROR) {
             return NGX_ERROR;
         }
