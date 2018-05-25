@@ -909,7 +909,7 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
         }
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "worker cycle");
-
+        // 循环开始处理事件
         ngx_process_events_and_timers(cycle);
 
         if (ngx_terminate) {

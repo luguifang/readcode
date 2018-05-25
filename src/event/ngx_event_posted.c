@@ -9,7 +9,7 @@
 #include <ngx_core.h>
 #include <ngx_event.h>
 
-
+/*两个指针都指向事件队列中的首个事件，这些事件间是以双向链表的形式组成的post事件队列*/
 ngx_thread_volatile ngx_event_t  *ngx_posted_accept_events;
 ngx_thread_volatile ngx_event_t  *ngx_posted_events;
 

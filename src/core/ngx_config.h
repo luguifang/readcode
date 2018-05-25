@@ -75,6 +75,14 @@
 
 #endif
 
+/*在64位的机器上，intptr_t和uintptr_t分别是long int、unsigned long int的别名；
+在32位的机器上，intptr_t和uintptr_t分别是int、unsigned int的别名
+这两个数据类型是ISO C99定义的，具体代码在linux平台的/usr/include/stdint.h头文件中
+
+*/
+
+
+
 typedef intptr_t        ngx_int_t;
 typedef uintptr_t       ngx_uint_t;
 typedef intptr_t        ngx_flag_t;

@@ -18,7 +18,7 @@
 extern ngx_mutex_t  *ngx_posted_events_mutex;
 #endif
 
-
+//向queue 事件队列中添加事件ev，ev将插入到事件队列首部
 #define ngx_locked_post_event(ev, queue)                                      \
                                                                               \
     if (ev->prev == NULL) {                                                   \
@@ -37,14 +37,14 @@ extern ngx_mutex_t  *ngx_posted_events_mutex;
                        "update posted event %p", ev);                         \
     }
 
-
+/*线程安全地向queue事件队列中添加事件ev*/
 #define ngx_post_event(ev, queue)                                             \
                                                                               \
     ngx_mutex_lock(ngx_posted_events_mutex);                                  \
     ngx_locked_post_event(ev, queue);                                         \
     ngx_mutex_unlock(ngx_posted_events_mutex);
 
-
+/*将事件ev从其所属的post事件队列中删除*/
 #define ngx_delete_posted_event(ev)                                           \
                                                                               \
     *(ev->prev) = ev->next;                                                   \
@@ -58,7 +58,8 @@ extern ngx_mutex_t  *ngx_posted_events_mutex;
                    "delete posted event %p", ev);
 
 
-
+/*调用posted事件队列中所有事件的handler回调方法，
+每个事件调用完handler方法后，都会从posted事件队列中删除*/
 void ngx_event_process_posted(ngx_cycle_t *cycle,
     ngx_thread_volatile ngx_event_t **posted);
 void ngx_wakeup_worker_thread(ngx_cycle_t *cycle);
@@ -67,7 +68,7 @@ void ngx_wakeup_worker_thread(ngx_cycle_t *cycle);
 ngx_int_t ngx_event_thread_process_posted(ngx_cycle_t *cycle);
 #endif
 
-
+//post 相关的事件队列
 extern ngx_thread_volatile ngx_event_t  *ngx_posted_accept_events;
 extern ngx_thread_volatile ngx_event_t  *ngx_posted_events;
 

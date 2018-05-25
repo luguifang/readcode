@@ -23,7 +23,7 @@ io_submit(aio_context_t ctx, long n, struct iocb **paiocb)
     return syscall(SYS_io_submit, ctx, n, paiocb);
 }
 
-
+/*打开文件异步io后 该方法负责磁盘文件的读取*/
 ssize_t
 ngx_file_aio_read(ngx_file_t *file, u_char *buf, size_t size, off_t offset,
     ngx_pool_t *pool)

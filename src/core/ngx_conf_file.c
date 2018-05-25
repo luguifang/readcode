@@ -121,7 +121,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
     if (filename) {
 
         /* open configuration file */
-
+		//打开配置文件
         fd = ngx_open_file(filename->data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
         if (fd == NGX_INVALID_FILE) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
@@ -133,7 +133,8 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         prev = cf->conf_file;
 
         cf->conf_file = &conf_file;
-
+		//-----------------------为cf->conf_file 成员赋值 初始化buf成员----start
+		//获取由文件指针 fd 所打开文件的统计信息包括访问事件 修改事件等
         if (ngx_fd_info(fd, &cf->conf_file->file.info) == -1) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, ngx_errno,
                           ngx_fd_info_n " \"%s\" failed", filename->data);
@@ -157,7 +158,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         cf->conf_file->file.offset = 0;
         cf->conf_file->file.log = cf->log;
         cf->conf_file->line = 1;
-
+//----------------------------------------------------------end
         type = parse_file;
 
     } else if (cf->conf_file->file.fd != NGX_INVALID_FILE) {
@@ -170,7 +171,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
 
     for ( ;; ) {
-        rc = ngx_conf_read_token(cf);
+        rc = ngx_conf_read_token(cf);//解析配置文件里的内容
 
         /*
          * ngx_conf_read_token() may return
@@ -240,7 +241,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
             goto failed;
         }
 
-
+		//调用各个模块的ngx_command_t 解析各自命令行参数
         rc = ngx_conf_handler(cf, rc);
 
         if (rc == NGX_ERROR) {
@@ -430,7 +431,7 @@ invalid:
     return NGX_ERROR;
 }
 
-
+/*解析配置文件里的内容*/
 static ngx_int_t
 ngx_conf_read_token(ngx_conf_t *cf)
 {
@@ -516,7 +517,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
             if (size > b->end - (b->start + len)) {
                 size = b->end - (b->start + len);
             }
-
+			// 读取文件指定部分内容 根据偏移 开始长度 大小 读出该位置内容
             n = ngx_read_file(&cf->conf_file->file, b->start + len, size,
                               cf->conf_file->file.offset);
 
@@ -540,7 +541,7 @@ ngx_conf_read_token(ngx_conf_t *cf)
         ch = *b->pos++;
 
         if (ch == LF) {
-            cf->conf_file->line++;
+            cf->conf_file->line++;//按行解析
 
             if (sharp_comment) {
                 sharp_comment = 0;

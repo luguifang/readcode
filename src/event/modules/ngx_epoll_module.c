@@ -68,11 +68,43 @@ int epoll_wait(int epfd, struct epoll_event *events, int nevents, int timeout)
 
 typedef u_int  aio_context_t;
 
+
+/*
+struct iocb {
+	__u64	aio_data;	
+ data to be returned in event's data,nginx中这个字段通常存储对应的ngx_event_t事件指针，它实际上与io_getevents 方法中返回的io_event结构的data成员完全一致
+	__u32	PADDED(aio_key, aio_reserved1);
+	 不需要设置
+	__u16	aio_lio_opcode;
+	操作码 其取值范围为io_iocb_cmd_t 中枚举的命令
+	__s16	aio_reqprio;
+	请求优先级
+	__u32	aio_fildes;
+    文件描述符
+	__u64	aio_buf;
+读写操作对应的用户态缓冲区
+	__u64	aio_nbytes;
+	读写操作的字节长度
+	__s64	aio_offset;
+	写操作对应于文件中的偏移量
+	__u64	aio_reserved2;
+    保留字段
+	__u32	aio_flags;
+	表示可以设置为IOCB_FLAG_RESFD 它会告诉内核当有异步IO请求处理完成时
+使用eventfd进行通知，可与epoll配合使用
+	__u32	aio_resfd;
+	IOCB_FLAG_RESFD 标志位，用于进行事件通知的句柄
+};
+*/
+
+
+
+
 struct io_event {
     uint64_t  data;  /* the data field from the iocb */
-    uint64_t  obj;   /* what iocb this event came from */
-    int64_t   res;   /* result code for this event */
-    int64_t   res2;  /* secondary result */
+    uint64_t  obj;   /* what iocb this event came from 提交事件是对应的iocb结构体*/
+    int64_t   res;   /* result code for this event 异步I/O请求的结构。res大于或等于0时表示成功，小于0时表示失败*/
+    int64_t   res2;  /* secondary result 保留字段*/
 };
 
 
@@ -117,11 +149,13 @@ static struct epoll_event  *event_list;
 static ngx_uint_t           nevents;
 
 #if (NGX_HAVE_FILE_AIO)
-
+/*用于通知异步IO事件描述符它与iocb结构体中的aio_resfd成员是一致的*/
 int                         ngx_eventfd = -1;
+/*异步I/O的上下文，全局唯一，必须经过io_setup初始化才能使用*/
 aio_context_t               ngx_aio_ctx = 0;
-
+/*异步I/O事件完成后进行通知的描述符，也就是ngx_eventfd所对应的ngx_event_t事件*/
 static ngx_event_t          ngx_eventfd_event;
+/*异步I/O事件完成后进行通知的描述符ngx_eventfd所对应的ngx_connection_t连接*/
 static ngx_connection_t     ngx_eventfd_conn;
 
 #endif
@@ -241,19 +275,19 @@ ngx_epoll_aio_init(ngx_cycle_t *cycle, ngx_epoll_conf_t *epcf)
                    "eventfd: %d", ngx_eventfd);
 
     n = 1;
-
+	//设置无阻塞
     if (ioctl(ngx_eventfd, FIONBIO, &n) == -1) {
         ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
                       "ioctl(eventfd, FIONBIO) failed");
         goto failed;
     }
-
+	//初始化文件异步io的上下文
     if (io_setup(epcf->aio_requests, &ngx_aio_ctx) == -1) {
         ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
-                      "io_setup() failed");
+                      "io_setup() failed"); 
         goto failed;
     }
-
+	//设置用于异步I/O完成通知的ngx_eventfd_event事件，它与ngx_eventfd_conn连接是对应的
     ngx_eventfd_event.data = &ngx_eventfd_conn;
     ngx_eventfd_event.handler = ngx_epoll_eventfd_handler;
     ngx_eventfd_event.log = cycle->log;
@@ -747,7 +781,7 @@ ngx_epoll_eventfd_handler(ngx_event_t *ev)
     struct timespec   ts;
 
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ev->log, 0, "eventfd handler");
-
+	//获取已经完成的事件数目并设置到ready中
     n = read(ngx_eventfd, &ready, 8);
 
     err = ngx_errno;
@@ -771,7 +805,7 @@ ngx_epoll_eventfd_handler(ngx_event_t *ev)
 
     ts.tv_sec = 0;
     ts.tv_nsec = 0;
-
+// 还未处理的事件
     while (ready) {
 
         events = io_getevents(ngx_aio_ctx, 1, 64, event, &ts);

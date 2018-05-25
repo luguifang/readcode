@@ -192,8 +192,8 @@ ngx_module_t  ngx_event_core_module = {
     ngx_event_core_commands,               /* module directives */
     NGX_EVENT_MODULE,                      /* module type */
     NULL,                                  /* init master */
-    ngx_event_module_init,                 /* init module */
-    ngx_event_process_init,                /* init process */
+    ngx_event_module_init,                 /* init module 重要函数入口：事件模块的顶层初始化*/
+    ngx_event_process_init,                /* init process 重要函数入口：事件模块顶层处理*/
     NULL,                                  /* init thread */
     NULL,                                  /* exit thread */
     NULL,                                  /* exit process */
@@ -211,14 +211,15 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 {
     ngx_uint_t  flags;
     ngx_msec_t  timer, delta;
-
+	// 控制时间精度timer 值为-1
     if (ngx_timer_resolution) {
         timer = NGX_TIMER_INFINITE;
-        flags = 0;
+        flags = 0;//ngx_process_event 没有任何附加动作
 
     } else {
+		/*获取最近一个将要触发的事件距离现在的毫秒数，告诉ngx_process_event如果没有任何事件最多等待timer毫秒返回*/
         timer = ngx_event_find_timer();
-        flags = NGX_UPDATE_TIME;
+        flags = NGX_UPDATE_TIME;// 需要更新缓存时间
 
 #if (NGX_THREADS)
 
@@ -234,15 +235,17 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
             ngx_accept_disabled--;
 
         } else {
+        	//未触发负载均衡机制 尝试获取ngx_accept_mutex锁
             if (ngx_trylock_accept_mutex(cycle) == NGX_ERROR) {
                 return;
             }
-
+			//ngx_accept_mutex_held =1 获取到锁
             if (ngx_accept_mutex_held) {
 				//开始处理新连接事件 falgs 加入NGX_POST_EVENTS 标志位
                 flags |= NGX_POST_EVENTS;
 
             } else {
+            	/*如果没有获取到锁则意味着既不能让当前worker进程频繁的试图枪锁，也不能让它经过太长时间再去枪锁*/
                 if (timer == NGX_TIMER_INFINITE
                     || timer > ngx_accept_mutex_delay)
                 {
@@ -251,10 +254,11 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
             }
         }
     }
-
+	// 计算ngx_process_events 执行消耗的时间
     delta = ngx_current_msec;
-
-    (void) ngx_process_events(cycle, timer, flags);
+	/*调用所有事件驱动模块的process_event 方法，处理网络事件 如果timer=-1 则告诉ngx_process_events方法检测事件
+	时不要等待直接搜集已经就绪的事件然后返回*/
+    (void) ngx_process_events(cycle, timer, flags);//此处根据配置调用相应epoll、poll、select等事件模型的process_event方法处理事件
 
     delta = ngx_current_msec - delta;
 
@@ -262,14 +266,16 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
                    "timer delta: %M", delta);
 
     if (ngx_posted_accept_events) {
+		//处理新建post事件队列中的事件
         ngx_event_process_posted(cycle, &ngx_posted_accept_events);
     }
 
     if (ngx_accept_mutex_held) {
         ngx_shmtx_unlock(&ngx_accept_mutex);
     }
-
+	//如果ngx_process_event 执行时间消耗delta大于0 而且这是可能有新的定时器时间被触发则调用ngx_event_expire_timers处理所有满足的定时器事件
     if (delta) {
+		//处理定时器事件
         ngx_event_expire_timers();
     }
 
@@ -281,6 +287,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
             ngx_wakeup_worker_thread(cycle);
 
         } else {
+        	//处理post事件队列中的事件
             ngx_event_process_posted(cycle, &ngx_posted_events);
         }
     }
@@ -638,7 +645,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
         module = ngx_modules[m]->ctx;
-		/*初始化事件驱动模块（use配置项指定的事件模块）*/
+		/*重要函数入口：初始化下层具体事件(epoll,poll等)驱动模块（use配置项指定的事件模块）*/
         if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK) {
             /* fatal */
             exit(2);

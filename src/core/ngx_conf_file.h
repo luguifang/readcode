@@ -157,7 +157,7 @@ typedef struct {
 
 
 typedef struct {
-    ngx_file_t            file;
+    ngx_file_t            file; //配置文件属性相关信息
     ngx_buf_t            *buffer;
     ngx_uint_t            line;
 } ngx_conf_file_t;
@@ -168,13 +168,13 @@ typedef char *(*ngx_conf_handler_pt)(ngx_conf_t *cf,
 
 
 struct ngx_conf_s {
-    char                 *name;
-    ngx_array_t          *args;
+    char                 *name; //当前解析的命令名
+    ngx_array_t          *args;//当前命令的所有参数
 
     ngx_cycle_t          *cycle;
     ngx_pool_t           *pool;
     ngx_pool_t           *temp_pool;
-    ngx_conf_file_t      *conf_file;
+    ngx_conf_file_t      *conf_file;//将要解析的配置文件
     ngx_log_t            *log;
 
     void                 *ctx;
