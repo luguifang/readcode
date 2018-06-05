@@ -1082,7 +1082,7 @@ ngx_signal_process(ngx_cycle_t *cycle, char *sig)
                       n, buf, file.name.data);
         return 1;
     }
-
+	// 向master 进程发送信号
     return ngx_os_signal_process(cycle, sig, pid);
 
 }

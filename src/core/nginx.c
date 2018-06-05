@@ -349,7 +349,7 @@ main(int argc, char *const *argv)
 
         return 0;
     }
-	/*lgf 进入单进程模式*/
+	/*lgf 通过nginx -s stop 发送信号的进程*/
     if (ngx_signal) {
         return ngx_signal_process(cycle, ngx_signal);
     }
@@ -359,13 +359,14 @@ main(int argc, char *const *argv)
     ngx_cycle = cycle;
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
+	// 配置文件没有配置 ccf-master 默认是1 当前进程类型为 master
 
     if (ccf->master && ngx_process == NGX_PROCESS_SINGLE) {
         ngx_process = NGX_PROCESS_MASTER;
     }
 
 #if !(NGX_WIN32)
-
+	// 向进程安装信号处理器
     if (ngx_init_signals(cycle->log) != NGX_OK) {
         return 1;
     }
@@ -770,7 +771,7 @@ ngx_get_options(int argc, char *const *argv)
                     || ngx_strcmp(ngx_signal, "reopen") == 0
                     || ngx_strcmp(ngx_signal, "reload") == 0)
                 {
-                    ngx_process = NGX_PROCESS_SIGNALLER;
+                    ngx_process = NGX_PROCESS_SIGNALLER;//表明当前进程类型，ngx 默认采用master-worker模式，此进程类型是命令行发送信号的进程
                     goto next;
                 }
 

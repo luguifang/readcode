@@ -280,7 +280,7 @@ ngx_execute_proc(ngx_cycle_t *cycle, void *data)
     exit(1);
 }
 
-
+//向进程安装信号及信号处理程式
 ngx_int_t
 ngx_init_signals(ngx_log_t *log)
 {
@@ -571,7 +571,7 @@ ngx_debug_point(void)
     }
 }
 
-
+//通过kill向其他进程发送信号
 ngx_int_t
 ngx_os_signal_process(ngx_cycle_t *cycle, char *name, ngx_int_t pid)
 {

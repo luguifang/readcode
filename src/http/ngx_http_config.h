@@ -23,13 +23,22 @@ typedef struct {
 
 typedef struct {
     ngx_int_t   (*preconfiguration)(ngx_conf_t *cf);
+	/*解析http{....}前回调*/
     ngx_int_t   (*postconfiguration)(ngx_conf_t *cf);
+	/*解析完所有http{....}内的配置项后回调*/
 
     void       *(*create_main_conf)(ngx_conf_t *cf);
+	/*创建用于存储HTTP全局配置项的结构体，该结构体中的成员将保存直属于
+	http{}块的配置项参数。它会在解析main配置项前调用*/
     char       *(*init_main_conf)(ngx_conf_t *cf, void *conf);
+	/*解析完main配置项后回调*/
 
     void       *(*create_srv_conf)(ngx_conf_t *cf);
+	/*创建用于存储可同时出现在main、srv级别配置项的结构体，该结构体中的成员与server配置是相关联的*/
     char       *(*merge_srv_conf)(ngx_conf_t *cf, void *prev, void *conf);
+	/*create_srv_conf 产生的结构体所要解析的配置项，可能同时出现main、srv级别中，merge_srv_conf方法可以把出现在
+	main级别中的配置项值合并到
+	srv级别配置项中*/
 
     void       *(*create_loc_conf)(ngx_conf_t *cf);
     char       *(*merge_loc_conf)(ngx_conf_t *cf, void *prev, void *conf);
