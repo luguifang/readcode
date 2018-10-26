@@ -16,8 +16,14 @@
 
 typedef struct {
     void        **main_conf;
+	/*指向一个指针数组，数组中每个成员都是由所有HTTP模块的create_main_conf方法创建的存放全局配置项结构体，
+	他们存放着解析直属http{}快内的main级别的配置项参数*/
     void        **srv_conf;
+	/*指向一个指针数组，数组中的每一个成员都是由所有http模块的create_srv_conf 方法创建的与server相关的结构体 
+	他们或存放main级别配置或存放srv级别配置项 这与当前的ngx_http_conf_ctx_t是在解析http{}或者server{}快时创建的有关*/
     void        **loc_conf;
+	/*指向一个指针数组，数组中的每个成员都是由所有HTTP模块的create_loc_conf方法创建的与location相关的结构体，它们可能存放着
+	main、srv、loc级别的配置项，这与当前的ngx_http_conf_ctx_t是在解析http{}、server{}或者location{}块时创建的有关*/
 } ngx_http_conf_ctx_t;
 
 
@@ -34,9 +40,11 @@ typedef struct {
 	/*解析完main配置项后回调*/
 
     void       *(*create_srv_conf)(ngx_conf_t *cf);
-	/*创建用于存储可同时出现在main、srv级别配置项的结构体，该结构体中的成员与server配置是相关联的*/
+	/*创建用于存储可同时出现在main、srv级别配置项的结构体，
+	该结构体中的成员与server配置是相关联的*/
     char       *(*merge_srv_conf)(ngx_conf_t *cf, void *prev, void *conf);
-	/*create_srv_conf 产生的结构体所要解析的配置项，可能同时出现main、srv级别中，merge_srv_conf方法可以把出现在
+	/*create_srv_conf 产生的结构体所要解析的配置项，可能同时出现main、srv级别中，
+	merge_srv_conf方法可以把出现在
 	main级别中的配置项值合并到
 	srv级别配置项中*/
 
@@ -73,7 +81,7 @@ typedef struct {
     ((ngx_http_conf_ctx_t *) cf->ctx)->srv_conf[module.ctx_index]
 #define ngx_http_conf_get_module_loc_conf(cf, module)                         \
     ((ngx_http_conf_ctx_t *) cf->ctx)->loc_conf[module.ctx_index]
-
+/*通过ngx_cycke_t 核心结构找到main级别的配置结构体*/
 #define ngx_http_cycle_get_module_main_conf(cycle, module)                    \
     (cycle->conf_ctx[ngx_http_module.index] ?                                 \
         ((ngx_http_conf_ctx_t *) cycle->conf_ctx[ngx_http_module.index])      \

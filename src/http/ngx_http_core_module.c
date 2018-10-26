@@ -2629,7 +2629,7 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     ngx_http_listen_opt_t        lsopt;
     ngx_http_core_srv_conf_t    *cscf, **cscfp;
     ngx_http_core_main_conf_t   *cmcf;
-
+	// 建立属于sever 快的ngx_http_conf_ctx_t 结构体
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
@@ -2639,7 +2639,7 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     ctx->main_conf = http_ctx->main_conf;
 
     /* the server{}'s srv_conf */
-
+	//重新分配指针数组 数组大小为ngx_http_max_module http 模块总和
     ctx->srv_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->srv_conf == NULL) {
         return NGX_CONF_ERROR;
@@ -2651,7 +2651,7 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
     }
-
+	// 循环调用所有http模块的create_srv_conf 方法将返回的结构体指针按照模块序号ctx_index 保存到上述的srv_conf 指针数组中
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->type != NGX_HTTP_MODULE) {
             continue;
@@ -2696,6 +2696,7 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
 
     /* parse inside server{} */
+	// 解析 srever{} 块内所有的配置项
 
     pcf = *cf;
     cf->ctx = ctx;
