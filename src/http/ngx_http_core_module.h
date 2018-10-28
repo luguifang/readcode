@@ -296,6 +296,7 @@ typedef struct {
 
 struct ngx_http_core_loc_conf_s {
     ngx_str_t     name;          /* location name */
+	// nginx.conf 中 location后的表达式
 
 #if (NGX_PCRE)
     ngx_http_regex_t  *regex;
@@ -323,6 +324,7 @@ struct ngx_http_core_loc_conf_s {
 
     /* pointer to the modules' loc_conf */
     void        **loc_conf;
+/*指向所属localtion块内ngx_http_conf_ctx_t 结构体中的loc_conf 指针数组，他保存着当前location块内的所有http模块create_loc_conf 方法产生的结构体指针*/
 
     uint32_t      limit_except;
     void        **limit_except_loc_conf;
@@ -420,6 +422,7 @@ struct ngx_http_core_loc_conf_s {
     ngx_uint_t    types_hash_bucket_size;
 
     ngx_queue_t  *locations;
+	/*将同一个server块内的多个表达location块的ngx_http_core_loc_conf_t 结构体以双向链表的形式组织起来，该location指针将指向ngx_http_location_queue_t 结构体*/
 
 #if 0
     ngx_http_core_loc_conf_t  *prev_location;
@@ -429,9 +432,13 @@ struct ngx_http_core_loc_conf_s {
 
 typedef struct {
     ngx_queue_t                      queue;
+	/*queue将作为ngx_queue_t 双向链表容器。从而将ngx_http_location_queue_t 结构体链接起来*/
     ngx_http_core_loc_conf_t        *exact;
+	/*如果location中的字符串可以精确匹配包括正则表达式，exact将指向对应的ngx_http_core_loc_conf_t 结构体，否则值位NULL*/
     ngx_http_core_loc_conf_t        *inclusive;
+	/*如果location中的字符串无法精确匹配（包括了自定义的通配符，inclusive将指向对应的ngx_http_core_loc_conf_t结构体，否则值为NULL*/
     ngx_str_t                       *name;
+	/*指向location的名称*/
     u_char                          *file_name;
     ngx_uint_t                       line;
     ngx_queue_t                      list;

@@ -2740,7 +2740,7 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     return rv;
 }
 
-
+// 解析location{} 配置块流程
 static char *
 ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 {

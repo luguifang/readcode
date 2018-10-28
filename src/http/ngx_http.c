@@ -558,7 +558,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
     return NGX_OK;
 }
 
-
+// 合并server级别的配置项
 static char *
 ngx_http_merge_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
     ngx_http_module_t *module, ngx_uint_t ctx_index)
@@ -570,6 +570,10 @@ ngx_http_merge_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
     ngx_http_core_srv_conf_t   **cscfp;
 
     cscfp = cmcf->servers.elts;
+	/*cmcf是ngx_http_core_module在http块下的全局配置结构体，它的servers成员是一个动态数组，
+	它保存着所有ngx_http_core_srv_conf_t的指针，从而关联了所有的server块*/
+
+	
     ctx = (ngx_http_conf_ctx_t *) cf->ctx;
     saved = *ctx;
     rv = NGX_CONF_OK;
