@@ -178,7 +178,7 @@ ngx_http_header_t  ngx_http_headers_in[] = {
     { ngx_null_string, 0, NULL }
 };
 
-
+//HTTP框架处理请求的第一步 add by luguifang
 void
 ngx_http_init_connection(ngx_connection_t *c)
 {
@@ -201,15 +201,18 @@ ngx_http_init_connection(ngx_connection_t *c)
     c->log->action = "reading client request line";
 
     c->log_error = NGX_ERROR_INFO;
-
+	//可读事件处理方法设置为ngx_http_init_request 它意味着当用户在这个TCP连接上发送的数据到达服务器后，ngx_http_init_request方法将会被调用add by luguifang
     rev = c->read;
     rev->handler = ngx_http_init_request;
+	/*可写事件，也会设置它的handler回调方法为ngx_http_empty_handler，这个方法不会做任何工作 
+	 这个方法仅有一个用途：当业务上不需要处理可写事件时，就把ngx_http_empty_handler
+	 方法设置到连接的可写事件的handler中，这样可写事件被定时器或者epoll触发后是不做任何工作的--luguifang*/
     c->write->handler = ngx_http_empty_handler;
 
 #if (NGX_STAT_STUB)
     (void) ngx_atomic_fetch_add(ngx_stat_reading, 1);
 #endif
-
+	// 连接上有用户请求的数据
     if (rev->ready) {
         /* the deferred accept(), rtsig, aio, iocp */
 
@@ -217,13 +220,14 @@ ngx_http_init_connection(ngx_connection_t *c)
             ngx_post_event(rev, &ngx_posted_events);
             return;
         }
-
+		//处理请求数据
         ngx_http_init_request(rev);
         return;
     }
-
+	/*调用ngx_add_timer方法把读事件添加到定时器中，设置的超时时间则是nginx.conf中client_header_timeout配置项指
+	定的参数。也就是说，如果经过client_header_timeout时间后这个连接上还没有用户数据到达，则会由定时器触发调用读事件的ngx_http_init_request处理方法---luguifang*/
     ngx_add_timer(rev, c->listening->post_accept_timeout);
-
+	/*调用ngx_handle_read_event方法把连接c的可读事件添加到epoll中 这里并没有把可写事件添加到epoll中，因为现在不需要向客户端发送任何数据--luguifang*/
     if (ngx_handle_read_event(rev, 0) != NGX_OK) {
 #if (NGX_STAT_STUB)
         (void) ngx_atomic_fetch_add(ngx_stat_reading, -1);
@@ -260,7 +264,7 @@ ngx_http_init_request(ngx_event_t *rev)
 #endif
 
     c = rev->data;
-
+	// 检验请求是否超时 如果超时关闭连接
     if (rev->timedout) {
         ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
 
@@ -268,6 +272,9 @@ ngx_http_init_request(ngx_event_t *rev)
         return;
     }
 
+	/*构造ngx_http_request_t 结构体并设置到连接的data成员，每个请求都会有一个ngx_http_request_t结构
+体，所有的HTTP模块都以此作为核心结构体来处理请求*/
+	
     c->requests++;
 
     hc = c->data;
@@ -308,6 +315,7 @@ ngx_http_init_request(ngx_event_t *rev)
     r->signature = NGX_HTTP_MODULE;
 
     /* find the server configuration for the address:port */
+	/* 找到监听地址对应的默认server add luguifang*/
 
     port = c->listening->servers;
 
