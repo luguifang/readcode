@@ -264,7 +264,7 @@ ngx_http_init_request(ngx_event_t *rev)
 #endif
 
     c = rev->data;
-	// 检验请求是否超时 如果超时关闭连接
+	// step1: 检验请求是否超时 如果超时关闭连接
     if (rev->timedout) {
         ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
 
@@ -272,7 +272,7 @@ ngx_http_init_request(ngx_event_t *rev)
         return;
     }
 
-	/*构造ngx_http_request_t 结构体并设置到连接的data成员，每个请求都会有一个ngx_http_request_t结构
+	/*step2:构造ngx_http_request_t 结构体并设置到连接的data成员，每个请求都会有一个ngx_http_request_t结构
 体，所有的HTTP模块都以此作为核心结构体来处理请求*/
 	
     c->requests++;
@@ -299,7 +299,7 @@ ngx_http_init_request(ngx_event_t *rev)
         }
 
     } else {
-        r = ngx_pcalloc(c->pool, sizeof(ngx_http_request_t));
+        r = ngx_pcalloc(c->pool, sizeof(ngx_http_request_t)); //创建ngx_http_request_t 结构
         if (r == NULL) {
             ngx_http_close_connection(c);
             return;
@@ -308,14 +308,14 @@ ngx_http_init_request(ngx_event_t *rev)
         hc->request = r;
     }
 
-    c->data = r;
+    c->data = r;// 设置到 ngx_connetcion_s 的结构体data变量中
     r->http_connection = hc;
 
     c->sent = 0;
     r->signature = NGX_HTTP_MODULE;
 
     /* find the server configuration for the address:port */
-	/* 找到监听地址对应的默认server add luguifang*/
+	/* step3:找到监听地址对应的默认server add luguifang*/
 
     port = c->listening->servers;
 
@@ -394,12 +394,14 @@ ngx_http_init_request(ngx_event_t *rev)
     r->virtual_names = addr_conf->virtual_names;
 
     /* the default server configuration for the address:port */
+	/*step4:设置请求对应的main、src、loc配置项*/
     cscf = addr_conf->default_server;
 
     r->main_conf = cscf->ctx->main_conf;
     r->srv_conf = cscf->ctx->srv_conf;
     r->loc_conf = cscf->ctx->loc_conf;
 
+	/*step5：重新设置连接读事件的回调方法为ngx_http_process_request_line -----luguifang*/
     rev->handler = ngx_http_process_request_line;
     r->read_event_handler = ngx_http_block_reading;
 
@@ -444,7 +446,7 @@ ngx_http_init_request(ngx_event_t *rev)
     if (!(c->log->log_level & NGX_LOG_DEBUG_CONNECTION)) {
         c->log->log_level = clcf->error_log->log_level;
     }
-
+	/*ste6： 创建接受缓冲区 -----luguifang*/
     if (c->buffer == NULL) {
         c->buffer = ngx_create_temp_buf(c->pool,
                                         cscf->client_header_buffer_size);
@@ -455,16 +457,17 @@ ngx_http_init_request(ngx_event_t *rev)
     }
 
     if (r->header_in == NULL) {
-        r->header_in = c->buffer;
+        r->header_in = c->buffer; /*ngx_connection_t结构体的buffer指针以及ngx_http_request_t结构体的header_in指针共
+									同指向这块内存缓冲区。这个header_in缓冲区将负责接收用户发送来的请求内容*/
     }
-
+	/*step7 :创建ngx_http_request_t 结构体内存池 -----luguifang*/
     r->pool = ngx_create_pool(cscf->request_pool_size, c->log);
     if (r->pool == NULL) {
         ngx_http_close_connection(c);
         return;
     }
 
-
+	/*step8：初始化ngx_http_request_t 结构体中的容器*/
     if (ngx_list_init(&r->headers_out.headers, r->pool, 20,
                       sizeof(ngx_table_elt_t))
         != NGX_OK)
@@ -473,7 +476,7 @@ ngx_http_init_request(ngx_event_t *rev)
         ngx_http_close_connection(c);
         return;
     }
-
+	/*step9: 创建指针数组以存放所有 http模块对该请求可能创建的上下文结构体----luguifang*/
     r->ctx = ngx_pcalloc(r->pool, sizeof(void *) * ngx_http_max_module);
     if (r->ctx == NULL) {
         ngx_destroy_pool(r->pool);
@@ -496,7 +499,7 @@ ngx_http_init_request(ngx_event_t *rev)
 
     r->main = r;
     r->count = 1;
-
+	/*step10：更新请求开始的事件*/
     tp = ngx_timeofday();
     r->start_sec = tp->sec;
     r->start_msec = tp->msec;
@@ -523,7 +526,7 @@ ngx_http_init_request(ngx_event_t *rev)
     r->stat_reading = 1;
     (void) ngx_atomic_fetch_add(ngx_stat_requests, 1);
 #endif
-
+	/*step11:调用ngx_http_process_request_line 接受http请求行------luguifang*/
     rev->handler(rev);
 }
 
