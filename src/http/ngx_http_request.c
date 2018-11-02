@@ -728,7 +728,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, rev->log, 0,
                    "http process request line");
-
+	/*检查读事件是否超时，超时事件是nginx.conf 中配置的client_header_timeout的值 lgf-conf*/
     if (rev->timedout) {
         ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
         c->timedout = 1;
@@ -741,15 +741,16 @@ ngx_http_process_request_line(ngx_event_t *rev)
     for ( ;; ) {
 
         if (rc == NGX_AGAIN) {
-            n = ngx_http_read_request_header(r);
+            n = ngx_http_read_request_header(r);//将数据从socket接受后 copy 到header_in中
 
             if (n == NGX_AGAIN || n == NGX_ERROR) {
                 return;
             }
         }
-
+		//用状态机解析已经接受到的tcp字符流，确认其是否构成完整的http请求行
         rc = ngx_http_parse_request_line(r, r->header_in);
-
+		/*接收到完整的HTTP请求行后，首先要把请求行中的信息如方法名、URI及其参
+			数、HTTP版本等信息设置到ngx_http_request_t结构体的相应成员中*/
         if (rc == NGX_OK) {
 
             /* the request line has been parsed successfully */
@@ -886,7 +887,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
                 r->headers_in.server.len = n;
                 r->headers_in.server.data = host;
             }
-
+			//HTTP版本小于1.0
             if (r->http_version < NGX_HTTP_VERSION_10) {
 
                 if (ngx_http_find_virtual_server(r, r->headers_in.server.data,
@@ -896,12 +897,12 @@ ngx_http_process_request_line(ngx_event_t *rev)
                     ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
                     return;
                 }
-
+				// 开始处理请求---------lgf-key
                 ngx_http_process_request(r);
                 return;
             }
 
-
+			//初始化ngx_http_request_t结构体中存放HTTP头部的一些容器 为下一步接受http头部做好准备
             if (ngx_list_init(&r->headers_in.headers, r->pool, 20,
                               sizeof(ngx_table_elt_t))
                 != NGX_OK)
@@ -920,7 +921,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
             }
 
             c->log->action = "reading client request headers";
-
+			//接受完请求行，将回调方法由ngx_http_process_request_line改为ngx_http_process_request_headers准备接收HTTP头部
             rev->handler = ngx_http_process_request_headers;
             ngx_http_process_request_headers(rev);
 
@@ -938,9 +939,10 @@ ngx_http_process_request_line(ngx_event_t *rev)
         }
 
         /* NGX_AGAIN: a request line parsing is still incomplete */
+		/*需要接收更多的字符流，header_in缓冲区做判断，检查是否还有空闲的内存*/
 
         if (r->header_in->pos == r->header_in->end) {
-
+			/*如果没有空间则分配更大的接受缓冲区，分配大小有nginx.conf 文件中的large_client_header_buffer配置项指定 lgf-conf*/
             rv = ngx_http_alloc_large_header_buffer(r, 1);
 
             if (rv == NGX_ERROR) {
@@ -1158,24 +1160,24 @@ ngx_http_read_request_header(ngx_http_request_t *r)
     rev = c->read;
 
     n = r->header_in->last - r->header_in->pos;
-
+	//接收到的还未解析的字符流
     if (n > 0) {
         return n;
     }
-
+	/*调用封装的recv方法把Linux内核套接字缓冲区中的TCP流复制到header_in*/
     if (rev->ready) {
         n = c->recv(c, r->header_in->last,
                     r->header_in->end - r->header_in->last);
-    } else {
+    } else { 
         n = NGX_AGAIN;
     }
-
+	/*没有接受到tcp 流则检查读事件中是否存在定时器 如果不存在定时器则调用ngx_add_timer 向读事件中添加定时器*/
     if (n == NGX_AGAIN) {
         if (!rev->timer_set) {
             cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
             ngx_add_timer(rev, cscf->client_header_timeout);
         }
-
+		/*调用ngx_handle_read_event 把该读事件添加到epoll 中*/
         if (ngx_handle_read_event(rev, 0) != NGX_OK) {
             ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
             return NGX_ERROR;
