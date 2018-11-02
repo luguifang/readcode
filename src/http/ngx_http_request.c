@@ -923,6 +923,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
             c->log->action = "reading client request headers";
 			//接受完请求行，将回调方法由ngx_http_process_request_line改为ngx_http_process_request_headers准备接收HTTP头部
             rev->handler = ngx_http_process_request_headers;
+			//http请求头的处理------lgf-key
             ngx_http_process_request_headers(rev);
 
             return;
@@ -963,7 +964,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
     }
 }
 
-
+//处理http请求头
 static void
 ngx_http_process_request_headers(ngx_event_t *rev)
 {
@@ -984,6 +985,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, rev->log, 0,
                    "http process request header line");
 
+	// 检查当前的读事件是否已经超时
     if (rev->timedout) {
         ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
         c->timedout = 1;
@@ -999,10 +1001,14 @@ ngx_http_process_request_headers(ngx_event_t *rev)
     for ( ;; ) {
 
         if (rc == NGX_AGAIN) {
-
+			/*检查接收HTTP请求头部的header_in缓冲区是否用尽，当header_in缓冲区的pos成员指
+			向了end成员时，表示已经用尽，这时需要调用ngx_http_alloc_large_header_buffer方法分配更
+			大、更多的缓冲区*/
             if (r->header_in->pos == r->header_in->end) {
 
                 rv = ngx_http_alloc_large_header_buffer(r, 0);
+				/*rv 三种值：NGX_OK表示成功分配到更大的缓冲区，可以继续接收客户端发来的字符流；NGX_DECLINED表示已经
+				达到缓冲区大小的上限，无法分配更大的缓冲区；NGX_ERROR表示出现错误*/
 
                 if (rv == NGX_ERROR) {
                     ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -1045,7 +1051,11 @@ ngx_http_process_request_headers(ngx_event_t *rev)
                 return;
             }
         }
-
+		/*调用ngx_http_parse_header_line方法解析缓冲区中的字符流。这种方法有3个返回值：
+		返回NGX_OK时，表示解析出一行HTTP头部，返回NGX_HTTP_PARSE_HEADER_DONE时，表示已经解析出了完整的HTTP头
+		部，这时可以准备开始处理HTTP请求了返回NGX_AGAIN时，表示还需要
+		接收到更多的字符流才能继续解析，这时需要去接收更多的字符流；除此之外
+		的错误情况发送400错误给客户端*/
         rc = ngx_http_parse_header_line(r, r->header_in,
                                         cscf->underscores_in_headers);
 
@@ -1063,6 +1073,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
             }
 
             /* a header line has been parsed successfully */
+			// 将解析到的http头部数据设置到ngx_http_request_t结构体headers_in成员的headers链表中
 
             h = ngx_list_push(&r->headers_in.headers);
             if (h == NULL) {
@@ -1117,13 +1128,18 @@ ngx_http_process_request_headers(ngx_event_t *rev)
             r->request_length += r->header_in->pos - r->header_in->start;
 
             r->http_state = NGX_HTTP_PROCESS_REQUEST_STATE;
-
+			/*根据HTTP头部中的host字段情况，调用ngx_http_find_virtual_server方法找到对应的虚拟主机配置块
+			检查以上步骤中接收解析出的HTTP头部是否合法，主要包括以下几
+			项：如果HTTP版本为1.1，则host头部不可以为空，否则返回400 Bad Request错误响应给客户
+			端；如果传递了Content-Length头部，那么它必须是合法的数字，否则会返回400 Length
+			Required错误响应给客户端；如果请求使用了PUT方法，那么必须传递Content-Length头部，
+			否则会返回400 Length Required错误响应给客户端*/
             rc = ngx_http_process_request_header(r);
 
             if (rc != NGX_OK) {
                 return;
             }
-
+			//调用ngx_http_process_request方法开始使用各HTTP模块正式地在业务上处理HTTP请求-----lgf-key
             ngx_http_process_request(r);
 
             return;
