@@ -889,9 +889,10 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "generic phase: %ui", r->phase_handler);
 
-    rc = ph->handler(r);
+    rc = ph->handler(r);//不允许阻塞操作
 
     if (rc == NGX_OK) {
+		/*当前阶段已经执行完毕，需要跳转到下一阶段，非NGX_OK的返回值不会使HTTP框架把进程控制权交还给epoll等事件模块，而是会继续立刻执行请求的后续处理方法*/
         r->phase_handler = ph->next;
         return NGX_AGAIN;
     }
@@ -900,13 +901,18 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
         r->phase_handler++;
         return NGX_AGAIN;
     }
-
+	/*如果handler方法返回NGX_AGAIN或者NGX_DONE，则意味着刚才的handler方法无
+法在这一次调度中处理完这一个阶段，它需要多次调度才能完成，也就是说，刚刚执行过的
+handler方法希望：如果请求对应的事件再次被触发时，将由ngx_http_request_handler通过
+ngx_http_core_run_phases再次调用这个handler方法。直接返回NGX_OK会使得HTTP框架立刻
+把控制权交还给epoll事件框架，不再处理当前请求，唯有这个请求上的事件再次被触发才会
+继续执行 ----lgf*/
     if (rc == NGX_AGAIN || rc == NGX_DONE) {
         return NGX_OK;
     }
 
     /* rc == NGX_ERROR || rc == NGX_HTTP_...  */
-
+	//如果其他的值则结束请求
     ngx_http_finalize_request(r, rc);
 
     return NGX_OK;
