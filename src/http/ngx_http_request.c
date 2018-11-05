@@ -1695,11 +1695,11 @@ ngx_http_process_request(ngx_http_request_t *r)
 	/*设置ngx_http_request_t结构体的read_event_handler方法为ngx_http_block_reading,当再次有读事件到来时，将会调用
 	read_event_handler方法处理请求。而这里将它设置为ngx_http_block_reading方法，这个方法
 	可认为不做任何事，它的意义在于，目前已经开始处理HTTP请求，除非某个HTTP模块重新
-	设置了read_event_handler方法，否则任何读事件都将得不到处理，也可以认为读事件被阻塞了*/
+	设置了read_event_handler方法，否则任何读事件都将得不到处理，也可以认为读事件被阻塞了--lgf*/
     r->read_event_handler = ngx_http_block_reading;
 
     ngx_http_handler(r);
-
+	/*调用ngx_http_run_posted_requests方法执行post请求----lgf*/
     ngx_http_run_posted_requests(c);
 }
 
@@ -1827,13 +1827,18 @@ found:
     return NGX_OK;
 }
 
-
+/*一个请求多半需要nginx 事件多次地调用http模块处理，通过ngx_http_request_handler函数来设置读写事件的回调方法*/
 static void
 ngx_http_request_handler(ngx_event_t *ev)
 {
     ngx_connection_t    *c;
     ngx_http_request_t  *r;
     ngx_http_log_ctx_t  *ctx;
+
+	/*从事件中取出ngx_http_request_t 结构体。
+	  在ngx_event_t结构体表示的事件中，data成员指向了这个事件对应的ngx_connection_t连接，
+	  在HTTP框架的ngx_connection_t结构体中的data成员则指向了ngx_http_request_t结
+		构体。毫无疑问，只有拥有了ngx_http_request_t结构体才可以处理HTTP请求*/
 
     c = ev->data;
     r = c->data;
@@ -1843,11 +1848,14 @@ ngx_http_request_handler(ngx_event_t *ev)
 
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http run request: \"%V?%V\"", &r->uri, &r->args);
-
+	/*检查wirte事件是否可读。之前我们已经在hgx_http_handler 方法中已经将write_event_handler设置为ngx_http_core_run_phases方法，
+	而一般我们开发的不太复杂的HTTP模块是不会重新设置write_event_handler方法的，因此，一旦有可写事件时，就会继续
+	执行ngx_http_core_run_phases方法，并继续按阶段调用各个HTTP模块实现的方法处理请求*/
     if (ev->write) {
         r->write_event_handler(r);
 
     } else {
+    	//当读写事件同时为1是 只会调用write事件处理方法，ngx 会优先处理写事件来保证性能
         r->read_event_handler(r);
     }
 

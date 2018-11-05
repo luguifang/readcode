@@ -862,9 +862,11 @@ ngx_http_core_run_phases(ngx_http_request_t *r)
     cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
 
     ph = cmcf->phase_engine.handlers;
+	/*ngx_http_request_t结构体中的phase_handler成员将决定执行到哪一阶段，以及下一阶段应当执行哪个HTTP模块实现的内容*/
 
     while (ph[r->phase_handler].checker) {
-
+		/*当checker方法的返回值非NGX_OK时，意味着向下执行phase_engine中的各处理方法；反之，当任何一个checker方法返回NGX_OK
+		时，意味着把控制权交还给Nginx的事件模块，由它根据事件（网络事件、定时器事件、异步I/O事件等）再次调度请求*/
         rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
 
         if (rc == NGX_OK) {

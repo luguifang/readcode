@@ -436,7 +436,7 @@ struct ngx_http_request_s {
     ngx_http_virtual_names_t         *virtual_names;
 
     ngx_int_t                         phase_handler;
-	/*全局的ngx_http_phase_engine_t结构体中定义了一个ngx_http_phase_handler_t回调方法组成的数组，而
+	/*ngx_http_phase_engine_t结构体中定义了一个ngx_http_phase_handler_t回调方法组成的数组，而
 	phase_handler成员则与该数组配合使用，表示请求下次应当执行以phase_handler作为序号指定的数组中的回调方法。
 	HTTP框架正是以这种方式把各个HTTP模块集成起来处理请求的*/
 	
