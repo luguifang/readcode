@@ -926,10 +926,12 @@ ngx_http_core_rewrite_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "rewrite phase: %ui", r->phase_handler);
-
+	/*调用HTTP模块实现的handle 方法*/
     rc = ph->handler(r);
 
     if (rc == NGX_DECLINED) {
+		/*phase_handler 加1 执行下一个回调函数，此时返回的是NGX_AGAIN，HTTP框架不会把进程控制权交还给epoll事件框
+		架，而是继续立刻执行请求的下一个回调方法*/
         r->phase_handler++;
         return NGX_AGAIN;
     }
