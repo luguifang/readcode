@@ -1619,7 +1619,7 @@ ngx_http_process_request_header(ngx_http_request_t *r)
     return NGX_OK;
 }
 
-
+//处理http 请求
 static void
 ngx_http_process_request(ngx_http_request_t *r)
 {
@@ -1678,9 +1678,9 @@ ngx_http_process_request(ngx_http_request_t *r)
     }
 
 #endif
-
+	/*开始处理请求了，不存在读取超时问题如果timer_set 标志为1 则从定时器中移除该读事件---luguifang*/
     if (c->read->timer_set) {
-        ngx_del_timer(c->read);
+        ngx_del_timer(c->read); 
     }
 
 #if (NGX_STAT_STUB)
@@ -1689,9 +1689,13 @@ ngx_http_process_request(ngx_http_request_t *r)
     (void) ngx_atomic_fetch_add(ngx_stat_writing, 1);
     r->stat_writing = 1;
 #endif
-
+	/*现在开始不会再需要接收HTTP请求行或者头部，所以需要重新设置当前连接读/写事件的回调方法*/
     c->read->handler = ngx_http_request_handler;
     c->write->handler = ngx_http_request_handler;
+	/*设置ngx_http_request_t结构体的read_event_handler方法为ngx_http_block_reading,当再次有读事件到来时，将会调用
+	read_event_handler方法处理请求。而这里将它设置为ngx_http_block_reading方法，这个方法
+	可认为不做任何事，它的意义在于，目前已经开始处理HTTP请求，除非某个HTTP模块重新
+	设置了read_event_handler方法，否则任何读事件都将得不到处理，也可以认为读事件被阻塞了*/
     r->read_event_handler = ngx_http_block_reading;
 
     ngx_http_handler(r);

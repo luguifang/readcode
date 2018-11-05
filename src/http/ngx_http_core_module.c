@@ -811,6 +811,11 @@ ngx_http_handler(ngx_http_request_t *r)
 
     r->connection->unexpected_eof = 0;
 
+	/*如果internal标志为1 表示要做内部跳转，将要把结构体中的phase_handler序号置为server_rewrite_index
+	注意ngx_http_phase_engine_t结构体中的handlers动态数组中保存了请求需要经历的所有回调方法，
+	而server_rewrite_index则是handlers数组中NGX_HTTP_SERVER_REWRITE_PHASE处理阶段的第一个ngx_http_phase_handler_t回调方法所处的位置
+	*/
+
     if (!r->internal) {
         switch (r->headers_in.connection_type) {
         case 0:
@@ -825,7 +830,8 @@ ngx_http_handler(ngx_http_request_t *r)
             r->keepalive = 1;
             break;
         }
-
+		/*不需要重定向，把phase_handler设置为0意味着从ngx_http_phase_engine_t指定数组的第一个回调方法开始执
+		行-----lgf*/
         r->lingering_close = (r->headers_in.content_length_n > 0);
         r->phase_handler = 0;
 
@@ -840,7 +846,7 @@ ngx_http_handler(ngx_http_request_t *r)
     r->gzip_ok = 0;
     r->gzip_vary = 0;
 #endif
-
+	//设置ngx_http_request_t结构体的write_event_handler成员为ngx_http_core_run_phases方法，并执行该方法
     r->write_event_handler = ngx_http_core_run_phases;
     ngx_http_core_run_phases(r);
 }
