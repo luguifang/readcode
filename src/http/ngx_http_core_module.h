@@ -99,22 +99,41 @@ typedef struct {
 
 typedef enum {
     NGX_HTTP_POST_READ_PHASE = 0,
+	/*接受到完整的http头后处理的http阶段----lgf*/
 
     NGX_HTTP_SERVER_REWRITE_PHASE,
+    /*在将请求的URI与location表达式匹配前，修改请求的URI（所谓的重定向）是一个独立的HTTP阶段*/
 
     NGX_HTTP_FIND_CONFIG_PHASE,
+    /*根据请求的URI寻找匹配的location表达式，这个阶段只能由ngx_http_core_module模块实现，不建议其他HTTP模块重新定义这一阶段的行为*/
     NGX_HTTP_REWRITE_PHASE,
+    /*在NGX_HTTP_FIND_CONFIG_PHASE阶段寻找到匹配的location之后再修改请求的URI*/
     NGX_HTTP_POST_REWRITE_PHASE,
+    /*rewrite重写URL后，防止错误的nginx.conf配置导致死循环（递归地修改URI），因此，这一阶段仅由
+	ngx_http_core_module模块处理。目前，控制死循环的方式很简单，首先检查rewrite的次数，如果一个请求超过
+	10次重定向,就认为进入了rewrite死循环，这时在NGX_HTTP_POST_REWRITE_PHASE阶段就会向用户返回500，表示服务器内部错误*/
 
     NGX_HTTP_PREACCESS_PHASE,
+    /*表示在处理NGX_HTTP_ACCESS_PHASE阶段决定请求的访问权限前，HTTP模块可以介入的处理阶段*/
 
     NGX_HTTP_ACCESS_PHASE,
+    /* 这个阶段用于让HTTP模块判断是否允许这个请求访问Nginx服务器*/
     NGX_HTTP_POST_ACCESS_PHASE,
+    /*在NGX_HTTP_ACCESS_PHASE阶段中，当HTTP模块的handler处理函数返回不允许访问的错误码时（实际就是
+	NGX_HTTP_FORBIDDEN或者NGX_HTTP_UNAUTHORIZED），这里将负责向用户发送拒绝服务的错误响应。因此，这个阶段实际上用于给
+	NGX_HTTP_ACCESS_PHASE阶段收尾*/
 
     NGX_HTTP_TRY_FILES_PHASE,
+    /*这个阶段完全是为try_files配置项而设立的，当HTTP请求访问静态文件资源时，
+	try_files配置项可以使这个请求顺序地访问多个静态文件资源，如果某一次访问失败，则继续访问
+	try_files中指定的下一个静态资源。这个功能完全是在
+	NGX_HTTP_TRY_FILES_PHASE阶段中实现的*/
     NGX_HTTP_CONTENT_PHASE,
+    /*用于处理HTTP请求内容的阶段，这是大部分HTTP模块最愿意介入的阶段*/
 
     NGX_HTTP_LOG_PHASE
+    /*处理完请求后记录日志的阶段。例如，ngx_http_log_module模块就在这个阶段中加入了一个handler处理方法，使得每个
+	HTTP请求处理完毕后会记录access_log访问日志*/
 } ngx_http_phases;
 
 typedef struct ngx_http_phase_handler_s  ngx_http_phase_handler_t;
@@ -135,7 +154,12 @@ typedef struct {
     ngx_http_phase_handler_t  *handlers;
 	/*ngx_http_phase_handler_t结构体构成的数组，每一个数组成员代表着一个HTTP模块所添加的一个处理方法*/
     ngx_uint_t                 server_rewrite_index;
+	/*表示NGX_HTTP_SERVER_REWRITE_PHASE阶段第1个ngx_http_phase_handler_t处理方法在
+	handlers数组中的序号，用于在执行HTTP请求的任何阶段中快速跳转到NGX_HTTP_SERVER_REWRITE_PHASE阶段处理请求*/
     ngx_uint_t                 location_rewrite_index;
+	/*表示NGX_HTTP_REWRITE_PHASE阶段第1个ngx_http_phase_handler_t处理方法在handlers数组中的序号，用于在执行
+	HTTP请求的任何阶段中快速跳转到
+	NGX_HTTP_REWRITE_PHASE阶段处理请求*/
 } ngx_http_phase_engine_t;
 
 
