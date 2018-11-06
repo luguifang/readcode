@@ -334,6 +334,7 @@ struct ngx_http_core_loc_conf_s {
     void        **limit_except_loc_conf;
 
     ngx_http_handler_pt  handler;
+	/*nginx.conf中匹配了请求的location块下配置的HTTP模块*/
 
     /* location name length for inclusive location with inherited alias */
     size_t        alias;

@@ -1092,14 +1092,17 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
     ngx_int_t                  rc;
     ngx_http_core_loc_conf_t  *clcf;
 
+	/*检查main成员与ngx_http_request_t自身的指针是否相等 判断是否是派生的其他子请求
+	如果当前请求是一个派生的子请求，则不需要执行  NGX_HTTP_ACCESS_PHASE阶段的处理方法的，那么直接将phase_handler设为下一个阶段
+	（实际上是NGX_HTTP_POST_ACCESS_PHASE阶段）的处理方法的序号----lgf*/
     if (r != r->main) {
         r->phase_handler = ph->next;
-        return NGX_AGAIN;
+        return NGX_AGAIN;// http框架继续执行新的http阶段请求方法
     }
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "access phase: %ui", r->phase_handler);
-
+	//原始请求 调用handler 处理方法
     rc = ph->handler(r);
 
     if (rc == NGX_DECLINED) {
@@ -1108,19 +1111,25 @@ ngx_http_core_access_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
     }
 
     if (rc == NGX_AGAIN || rc == NGX_DONE) {
-        return NGX_OK;
+        return NGX_OK;//没有一次性执行完毕，控制权交由事件模块
     }
-
+	// 从localtion 块中取出配置项satisfy ---lgf
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
-
+	// nginx.conf文件中配置了satisfy all参数，则所有NGX_HTTP_ACCESS_PHASE阶段的handler方法必须共同作用于这个请求
     if (clcf->satisfy == NGX_HTTP_SATISFY_ALL) {
-
+		//返回值为ok 意味着handler 方法所在的模块认为当前请求具备访问权限。需要再次检查NGX_HTTP_ACCESS_PHASE阶段的下一个HTTP模块的handler方法-----lgf
         if (rc == NGX_OK) {
             r->phase_handler++;
             return NGX_AGAIN;
         }
 
     } else {
+    	/*nginx.conf文件中配置了satisfy any参数
+		如果返回值是NGX_HTTP_FORBIDDEN或者
+		NGX_HTTP_UNAUTHORIZED，则表示这个HTTP模块的handler方法认为请求没有权限访问
+		服务，但只要NGX_HTTP_ACCESS_PHASE阶段的任何一个handler方法返回NGX_OK就认为
+		请求合法，所以后续的handler方法可能会更改这一结果，这时将请求的access_code成员设置
+		为handler方法的返回值，用于传递当前HTTP模块的处理结果*/
         if (rc == NGX_OK) {
             r->access_code = 0;
 
@@ -1378,7 +1387,16 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     ngx_int_t  rc;
     ngx_str_t  path;
 
+	/*检测ngx_http_request_t结构体的content_handler成员是否为空，其实就是看在
+	NGX_HTTP_FIND_CONFIG_PHASE阶段匹配了URI请求的location内，是否有HTTP模块把处
+	理方法设置到了ngx_http_core_loc_conf_t结构体的handler成员中----lgf
+	*/
     if (r->content_handler) {
+		/*将write_event_handler成员设置为不做任何事的ngx_http_request_empty_handler方法
+		也就是告诉HTTP框架再有可写事件时就调用ngx_http_request_empty_handler直接把控制权交还给事件模块
+		因为HTTP框架在这一阶段调用HTTP模块处理请求就意味着接下来只希望该模块处理请求，先把
+		write_event_handler强制转化为ngx_http_request_empty_handler，可以防止该HTTP模块异步地
+		处理请求时却有其他HTTP模块还在同时处理可写事件、向客户端发送响应*/
         r->write_event_handler = ngx_http_request_empty_handler;
         ngx_http_finalize_request(r, r->content_handler(r));
         return NGX_OK;
@@ -1386,7 +1404,7 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "content phase: %ui", r->phase_handler);
-
+	/*如果content_handler 为空则执行全局有效的handler方法*/
     rc = ph->handler(r);
 
     if (rc != NGX_DECLINED) {
@@ -1395,7 +1413,7 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     }
 
     /* rc == NGX_DECLINED */
-
+	/*检查当前handler是否已经是最后一个handler方法*/
     ph++;
 
     if (ph->checker) {
@@ -1404,20 +1422,23 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     }
 
     /* no content handler was found */
-
+	/*需要根据URI确定返回什么样的HTTP响应*/
     if (r->uri.data[r->uri.len - 1] == '/') {
 
         if (ngx_http_map_uri_to_path(r, &path, &root, 0) != NULL) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                           "directory index of \"%s\" is forbidden", path.data);
         }
-
+		/*以NGX_HTTP_FORBIDDEN作为参数调用ngx_http_finalize_request方法，表示结束请
+		求并返回403错误码。同时，ngx_http_core_content_phase方法返回NGX_OK，表示交还控制权给事件模块*/
         ngx_http_finalize_request(r, NGX_HTTP_FORBIDDEN);
         return NGX_OK;
     }
 
     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "no handler found");
-
+	/*以NGX_HTTP_NOT_FOUND作为参数调用ngx_http_finalize_request方法，表示结束请
+	求并返回404错误码。同时，ngx_http_core_content_phase方法返回NGX_OK，表示交还控制权
+	给事件模块*/
     ngx_http_finalize_request(r, NGX_HTTP_NOT_FOUND);
     return NGX_OK;
 }
