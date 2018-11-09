@@ -1862,7 +1862,7 @@ ngx_http_request_handler(ngx_event_t *ev)
     ngx_http_run_posted_requests(c);
 }
 
-
+/*处理post请求*/
 void
 ngx_http_run_posted_requests(ngx_connection_t *c)
 {
@@ -1873,16 +1873,18 @@ ngx_http_run_posted_requests(ngx_connection_t *c)
     for ( ;; ) {
 
         if (c->destroyed) {
+			/*连接被销毁，就结束ngx_http_run_posted_requests方法*/
             return;
         }
-
+		/*找到原始请求*/
         r = c->data;
         pr = r->main->posted_requests;
 
         if (pr == NULL) {
             return;
         }
-
+		/*将原始请求的posted_requests指针指向链表中下一个post请求（通过第1个post请求的
+		next指针可以获得），当然，下一个post请求有可能不存在，这在下一次循环中就会检测到*/
         r->main->posted_requests = pr->next;
 
         r = pr->request;
@@ -1892,7 +1894,9 @@ ngx_http_run_posted_requests(ngx_connection_t *c)
 
         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                        "http posted request: \"%V?%V\"", &r->uri, &r->args);
-
+		/*调用这个post请求ngx_http_request_t结构体中的write_event_handler方法。为什么不是
+		执行read_event_handler方法呢？原因很简单，子请求不是被网络事件驱动的，因此，执行
+		post请求时就相当于有可写事件，由Nginx主动做出动作*/
         r->write_event_handler(r);
     }
 }
