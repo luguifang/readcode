@@ -36,10 +36,15 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
     ngx_temp_file_t           *tf;
     ngx_http_request_body_t   *rb;
     ngx_http_core_loc_conf_t  *clcf;
-
+	/*原始请求的引用计数加1 luguifang*/
     r->main->count++;
 
+
+	/*检查请求ngx_http_request_t结构体中的request_body成员，如果它已经被分配过了，证明
+	已经读取过HTTP包体了，不需要再次读取一遍，再检查请求ngx_http_request_t结构体中的discard_body标志位，如果discard_body为1，则证明曾经执行过
+	丢弃包体的方法，现在包体正在被丢弃中*/
     if (r->request_body || r->discard_body) {
+		/*直接执行各HTTP模块提供的post_handler回调方法*/
         post_handler(r);
         return NGX_OK;
     }
@@ -47,7 +52,7 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
     if (ngx_http_test_expect(r) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
-
+	/*分配请求的ngx_http_request_t结构体中的request_body成员（之前request_body是NULL空指针），准备接收包体*/
     rb = ngx_pcalloc(r->pool, sizeof(ngx_http_request_body_t));
     if (rb == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -61,6 +66,9 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
     }
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+
+	/*检查请求的content-length头部，如果指定了包体长度的content-length字段小于或等于
+0，当然不用继续接收包体，*/
 
     if (r->headers_in.content_length_n == 0) {
 
@@ -97,7 +105,8 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
 
         return NGX_OK;
     }
-
+	/*如果content-length大于0，则意味着继续执行，但HTTP模块定义的post_handler方法不会知道在哪一次事件的触发中会被回调，所以先把它
+	设置到request_body结构体的post_handler成员中*/
     rb->post_handler = post_handler;
 
     /*
