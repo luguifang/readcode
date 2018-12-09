@@ -42,7 +42,7 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
 
 	/*检查请求ngx_http_request_t结构体中的request_body成员，如果它已经被分配过了，证明
 	已经读取过HTTP包体了，不需要再次读取一遍，再检查请求ngx_http_request_t结构体中的discard_body标志位，如果discard_body为1，则证明曾经执行过
-	丢弃包体的方法，现在包体正在被丢弃中*/
+	丢弃包体的方法，现在包体正在被丢弃中luguifang*/
     if (r->request_body || r->discard_body) {
 		/*直接执行各HTTP模块提供的post_handler回调方法*/
         post_handler(r);
@@ -52,7 +52,7 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
     if (ngx_http_test_expect(r) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
-	/*分配请求的ngx_http_request_t结构体中的request_body成员（之前request_body是NULL空指针），准备接收包体*/
+	/*分配请求的ngx_http_request_t结构体中的request_body成员（之前request_body是NULL空指针），准备接收包体luguifang*/
     rb = ngx_pcalloc(r->pool, sizeof(ngx_http_request_body_t));
     if (rb == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -68,7 +68,7 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
 	/*检查请求的content-length头部，如果指定了包体长度的content-length字段小于或等于
-0，当然不用继续接收包体，*/
+0，当然不用继续接收包体，luguifang*/
 
     if (r->headers_in.content_length_n == 0) {
 
@@ -106,7 +106,7 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
         return NGX_OK;
     }
 	/*如果content-length大于0，则意味着继续执行，但HTTP模块定义的post_handler方法不会知道在哪一次事件的触发中会被回调，所以先把它
-	设置到request_body结构体的post_handler成员中*/
+	设置到request_body结构体的post_handler成员中luguifang*/
     rb->post_handler = post_handler;
 
     /*
@@ -116,7 +116,19 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
      *     rb->buf = NULL;
      *     rb->rest = 0;
      */
+	/*接收HTTP头部的流程中，是有可能接收到HTTP包体的，检查在header_in缓冲区中已经接收到的包体长度luguifang*/
+	/*
+	body:
+	
+	buf-chains:|--buf--|--buf--|--buf--|--buf-|
+		 	0x0001                            0x000f
 
+	buf: |----------data----------|
+		 pos     				last
+		 start =0x0001
+		 end = 0x000f
+	
+	luguifang*/
     preread = r->header_in->last - r->header_in->pos;
 
     if (preread) {
@@ -146,7 +158,7 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
         rb->bufs->next = NULL;
 
         rb->buf = b;
-
+		/*判断接受http头部过程中是否接收到了完整的包体 luguifang*/
         if ((off_t) preread >= r->headers_in.content_length_n) {
 
             /* the whole request body was pre-read */
@@ -175,7 +187,7 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
         r->request_length += preread;
 
         rb->rest = r->headers_in.content_length_n - preread;
-
+		/*检查header_in缓冲区里的剩余空闲空间是否可以存放下全部的包体（content-length头部指定）luguifang*/
         if (rb->rest <= (off_t) (b->end - b->last)) {
 
             /* the whole request body may be placed in r->header_in */
@@ -186,7 +198,7 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
 
             return ngx_http_do_read_client_request_body(r);
         }
-
+		// header_in 中的剩余内存不够，需要单独分配用于存储包体的内存 luguifang
         next = &rb->bufs->next;
 
     } else {
@@ -242,6 +254,9 @@ ngx_http_read_client_request_body(ngx_http_request_t *r,
         rb->to_write = rb->bufs->next ? rb->bufs->next : rb->bufs;
     }
 
+	/*设置请求ngx_http_request_t结构体的read_event_handler成员为
+	ngx_http_read_client_request_body_handler方法，它意味着如果epoll再次检测到可读事件或者
+	读事件的定时器超时，HTTP框架将调用ngx_http_read_client_request_body_handler方法处理 ----luguifang*/
     r->read_event_handler = ngx_http_read_client_request_body_handler;
 
     return ngx_http_do_read_client_request_body(r);
@@ -252,13 +267,16 @@ static void
 ngx_http_read_client_request_body_handler(ngx_http_request_t *r)
 {
     ngx_int_t  rc;
-
+	/*首先检查连接上读事件的timeout标志位，如果为1，则表示接收HTTP包体超时，这
+	时把连接ngx_connection_t结构体上的timeout标志位也置为1，同时调用
+	ngx_http_finalize_request方法结束请求，并发送408超时错误码------luguifang*/
     if (r->connection->read->timedout) {
         r->connection->timedout = 1;
         ngx_http_finalize_request(r, NGX_HTTP_REQUEST_TIME_OUT);
         return;
     }
-
+	/*调用ngx_http_do_read_client_request_body方法接收包体，检测这个
+	方法的返回值，如果它大于300，那么一定表示希望返回错误码*/
     rc = ngx_http_do_read_client_request_body(r);
 
     if (rc >= NGX_HTTP_SPECIAL_RESPONSE) {
@@ -285,12 +303,13 @@ ngx_http_do_read_client_request_body(ngx_http_request_t *r)
 
     for ( ;; ) {
         for ( ;; ) {
+			/*请求的request_body 的buf 缓冲区是否已满，若满则写入文件*/
             if (rb->buf->last == rb->buf->end) {
 
                 if (ngx_http_write_request_body(r, rb->to_write) != NGX_OK) {
                     return NGX_HTTP_INTERNAL_SERVER_ERROR;
                 }
-
+				/*复用缓冲区 将last 赋值为start*/
                 rb->to_write = rb->bufs->next ? rb->bufs->next : rb->bufs;
                 rb->buf->last = rb->buf->start;
             }
@@ -300,7 +319,7 @@ ngx_http_do_read_client_request_body(ngx_http_request_t *r)
             if ((off_t) size > rb->rest) {
                 size = (size_t) rb->rest;
             }
-
+			/*调用封装了recv的方法从套接字缓冲区中读取包体到缓冲区中----luguifang*/
             n = c->recv(c, rb->buf->last, size);
 
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
@@ -314,12 +333,13 @@ ngx_http_do_read_client_request_body(ngx_http_request_t *r)
                 ngx_log_error(NGX_LOG_INFO, c->log, 0,
                               "client closed prematurely connection");
             }
-
+			/*recv方法返回错误，或者客户端主动关闭了连接，设置ngx_http_request_t结构体的error标志位为1，同时返回
+			NGX_HTTP_BAD_REQUEST错误码*/
             if (n == 0 || n == NGX_ERROR) {
                 c->error = 1;
                 return NGX_HTTP_BAD_REQUEST;
             }
-
+			/*根据接收到的TCP流长度，修改缓冲区参数----luguifang*/
             rb->buf->last += n;
             rb->rest -= n;
             r->request_length += n;
@@ -335,15 +355,19 @@ ngx_http_do_read_client_request_body(ngx_http_request_t *r)
 
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
                        "http client request body rest %O", rb->rest);
-
+		//接受到完整包
         if (rb->rest == 0) {
             break;
         }
-
+		/*检查缓冲区是否可读，如果不可读，则将读
+		事件添加到事件模块，等待可读事件发生时，事件框架可以再次调度到这个方法接收包体。
+		这一步是调用ngx_add_timer方法将读事件添加到定时器中，超时时间以nginx.conf文件中的
+		client_body_timeout配置项参数为准*/
         if (!c->read->ready) {
             clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
             ngx_add_timer(c->read, clcf->client_body_timeout);
-
+			/*调用ngx_handle_read_event方法将读事件添加到epoll等事件收集器中，同时
+			ngx_http_do_read_client_request_body方法结束，返回NGX_AGAIN。------luguifang*/
             if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
                 return NGX_HTTP_INTERNAL_SERVER_ERROR;
             }
@@ -351,11 +375,14 @@ ngx_http_do_read_client_request_body(ngx_http_request_t *r)
             return NGX_AGAIN;
         }
     }
-
+	// 此处以后是接受到完整包体的处理，做收尾工作
+	/*检查是否接收HTTP包体超时了，要把读事件从定时器中取出，防止不必要的定时器触发。这一
+	步会检查读事件的timer_set标志位，如果为1，则调用ngx_del_timer方法把读事件从定时器中移除luguifang*/
     if (c->read->timer_set) {
         ngx_del_timer(c->read);
     }
-
+	/*如果缓冲区中还有未写入文件的内容，调用ngx_http_write_request_body方法把最后
+	的包体内容也写入文件luguifang*//
     if (rb->temp_file || r->request_body_in_file_only) {
 
         /* save the last part */
@@ -387,9 +414,10 @@ ngx_http_do_read_client_request_body(ngx_http_request_t *r)
     {
         rb->bufs = rb->bufs->next;
     }
-
+	/*read_event_handler设为ngx_http_block_reading方法，表示连接上再有读事件将不做任何处
+理*/
     r->read_event_handler = ngx_http_block_reading;
-
+	/*执行HTTP模块提供的post_handler回调方法后，ngx_http_do_read_client_request_body方法结束，返回NGX_OK*/
     rb->post_handler(r);
 
     return NGX_OK;

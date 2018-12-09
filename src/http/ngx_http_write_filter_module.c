@@ -55,7 +55,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_http_core_loc_conf_t  *clcf;
 
     c = r->connection;
-
+	/*检查请求是否出错 luguifang*/
     if (c->error) {
         return NGX_ERROR;
     }
@@ -66,7 +66,8 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ll = &r->out;
 
     /* find the size, the flush point and the last link of the saved chain */
-
+	/*找到请求的ngx_http_request_t结构体中存放的等待发送的缓冲区链表out，遍历这个
+	ngx_chain_t类型的缓冲区链表，计算出out缓冲区共占用了多大的字节数*/
     for (cl = r->out; cl; cl = cl->next) {
         ll = &cl->next;
 
@@ -111,7 +112,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     }
 
     /* add the new chain to the existent one */
-
+	/*将in中的缓冲区加入到out链表的末尾，并计算out缓冲区共占用多大的字节数*/
     for (ln = in; ln; ln = ln->next) {
         cl = ngx_alloc_chain_link(r->pool);
         if (cl == NULL) {
@@ -174,7 +175,12 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
      * there are the incoming bufs and the size of all bufs
      * is smaller than "postpone_output" directive
      */
-
+	/*
+	检查缓冲区中每个ngx_buf_t块的3个标志位：flush、
+recycled、last_buf，如果这3个标志位同时为0（即待发送的out链表中没有一个缓冲区表示响
+应已经结束或需要立刻发送出去），而且本次要发送的缓冲区in虽然不为空，但以上两步骤
+中计算出的待发送响应的大小又小于配置文件中的postpone_output参数，那么说明当前的缓
+冲区是不完整的且没有必要立刻发送，返回NGX_OK--------luguifang*/
     if (!last && !flush && in && size < (off_t) clcf->postpone_output) {
         return NGX_OK;
     }

@@ -170,12 +170,17 @@ ngx_http_header_filter(ngx_http_request_t *r)
 #endif
     u_char                     addr[NGX_SOCKADDR_STRLEN];
 
+	/*首先检查请求ngx_http_request_t结构体的header_sent标志位，如果header_sent为1，则
+	表示这个请求的响应头部已经发送过了，不需要再向下执行，直接返回NGX_OK                                luguifang*/
     if (r->header_sent) {
         return NGX_OK;
     }
 
     r->header_sent = 1;
 
+	/*检查当前请求是否是客户端发来的原始请求，如果当前请求只是一个子请
+	求，它是不存在发送HTTP响应头部这个概念的，因此，如果当前请求不是main成员指向的
+	原始请求时 直接返回NGX_OK     -----luguifang*/
     if (r != r->main) {
         return NGX_OK;
     }
@@ -187,6 +192,23 @@ ngx_http_header_filter(ngx_http_request_t *r)
     if (r->method == NGX_HTTP_HEAD) {
         r->header_only = 1;
     }
+
+
+	/*根据请求headers_out结构体中的错误码、HTTP头部字符串，计算出如果把响应头部
+	序列化为一个字符串共需要多少字节*/
+
+	/*sample http reponse :
+	HTTP/1.1 200 OK
+	Content-Length: 22025
+	Content-Type: image/png
+	Last-Modified: Tue, 29 Mar 2016 07:11:28 GMT
+	Accept-Ranges: bytes
+	ETag: "0904d368a89d11:0"
+	Server: Microsoft-IIS/7.5
+	X-Powered-By: ASP.NET
+	Date: Fri, 30 Nov 2018 13:25:16 GMT
+	*/
+	
 
     if (r->headers_out.last_modified_time != -1) {
         if (r->headers_out.status != NGX_HTTP_OK
@@ -432,11 +454,14 @@ ngx_http_header_filter(ngx_http_request_t *r)
                + sizeof(CRLF) - 1;
     }
 
+
+	/*分配响应头所需要的内存*/
+	
     b = ngx_create_temp_buf(r->pool, len);
     if (b == NULL) {
         return NGX_ERROR;
     }
-
+	/*将响应行、头部按照HTTP的规范序列化地复制到缓冲区中 -----luguifang*/
     /* "HTTP/1.x " */
     b->last = ngx_cpymem(b->last, "HTTP/1.1 ", sizeof("HTTP/1.x ") - 1);
 
@@ -609,7 +634,14 @@ ngx_http_header_filter(ngx_http_request_t *r)
 
     out.buf = b;
     out.next = NULL;
-
+	/*调用ngx_http_write_filter方法，将响应头部发送出去。
+	这个方法是包体过滤模块链表中的最后一个模块ngx_http_write_filter_module的处理方法，当HTTP模
+	块调用ngx_http_output_filter方法发送包体时，最终也是通过该方法发送响应的。当一次无法发送全部的缓冲区内容时，ngx_http_write_filter方法
+	是会返回NGX_AGAIN的（同时将未发送完成的缓冲区放到请求的out成员中），也就是说，
+	发送响应头部的ngx_http_header_filter方法会返回NGX_AGAIN。如果不需要再发送包体，那
+	么这时就需要调用ngx_http_finalize_request方法来结束请求，其中第2个参数务必要传递
+	NGX_AGAIN，这样HTTP框架才会继续将可写事件注册到epoll，并持续地把请求的out成员
+	中缓冲区里的HTTP响应发送完毕才会结束请求*/
     return ngx_http_write_filter(r, &out);
 }
 
