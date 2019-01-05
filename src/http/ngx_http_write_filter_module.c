@@ -184,8 +184,12 @@ recycled、last_buf，如果这3个标志位同时为0（即待发送的out链�
     if (!last && !flush && in && size < (off_t) clcf->postpone_output) {
         return NGX_OK;
     }
-
+	/*首先检查连接上写事件的标志位delayed，如果delayed为1，则表示这一次的epoll调度中
+	请求仍需要减速，是不可以发送响应的，delayed为1指明了响应需要延迟发送*/
     if (c->write->delayed) {
+		/*将客户端对应的ngx_connection_t结构体中的buffered标志位放上
+		NGX_HTTP_WRITE_BUFFERED宏，同时返回NGX_AGAIN，这是在告诉HTTP框架out缓冲
+		区中还有响应等待发送----luguifang*/
         c->buffered |= NGX_HTTP_WRITE_BUFFERED;
         return NGX_AGAIN;
     }
@@ -216,12 +220,23 @@ recycled、last_buf，如果这3个标志位同时为0（即待发送的out链�
         return NGX_ERROR;
     }
 
+
+	/*检查ngx_http_request_t结构体中的
+	limit_rate发送响应的速率，如果limit_rate为0，表示这个请求不需要限制发送速度
+	如果limit_rate大于0，则说明发送响应的速度不能超过limit_rate指定的速度
+	limit_rate表示每秒可以发送的字节数，超过这个数字就需要限速；然而，限
+速这个动作必须是在发送了limit_rate_after字节的响应后才能生效（对于小响应包的优化设
+计）-------luguifang*/
     if (r->limit_rate) {
+		// 计算本次可以发送的limit字节响应
         limit = r->limit_rate * (ngx_time() - r->start_sec + 1)
                 - (c->sent - clcf->limit_rate_after);
-
+		/*如果limit小于或等于0，它表示这个连接上的发送响应速度已经超出了limit_rate配置项的限制
+		本次不可以继续发送*/
         if (limit <= 0) {
+			//将连接上写事件的delayed标志位置为1	
             c->write->delayed = 1;
+			//将写事件加入定时器中，其中超时时间要根据limit来计算
             ngx_add_timer(c->write,
                           (ngx_msec_t) (- limit * 1000 / r->limit_rate + 1));
 
@@ -244,7 +259,7 @@ recycled、last_buf，如果这3个标志位同时为0（即待发送的out链�
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http write filter limit %O", limit);
-
+	//通过和其他限制值比较取小后，放送limit 字节响应-----luguifang
     chain = c->send_chain(c, r->out, limit);
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
@@ -254,7 +269,7 @@ recycled、last_buf，如果这3个标志位同时为0（即待发送的out链�
         c->error = 1;
         return NGX_ERROR;
     }
-
+	//跟上部类似计算limit值
     if (r->limit_rate) {
 
         nsent = c->sent;
@@ -289,6 +304,8 @@ recycled、last_buf，如果这3个标志位同时为0（即待发送的out链�
         ngx_add_timer(c->write, 1);
     }
 
+	/*重置ngx_http_request_t结构体的out缓冲区，把已经发送成功的缓冲区归还给内存
+池。如果out链表中还有剩余的没有发送出去的缓冲区，则添加到out链表头部*/
     for (cl = r->out; cl && cl != chain; /* void */) {
         ln = cl;
         cl = cl->next;

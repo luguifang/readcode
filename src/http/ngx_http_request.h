@@ -315,8 +315,12 @@ typedef struct ngx_http_cleanup_s  ngx_http_cleanup_t;
 
 struct ngx_http_cleanup_s {
     ngx_http_cleanup_pt               handler;
+	/*由http模块提供的清理资源的回调方法*/
     void                             *data;
+	/*给上方handler回调方法提供参数*/
     ngx_http_cleanup_t               *next;
+	/*一个请求可能会有多个ngx_http_cleanup_t清理方法，这些清理方法间就是通过
+	next指针连接成单链表的*/
 };
 
 

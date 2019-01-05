@@ -1937,7 +1937,10 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
     ngx_log_debug5(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http finalize request: %d, \"%V?%V\" a:%d, c:%d",
                    rc, &r->uri, &r->args, r == c->data, r->main->count);
-
+	/*NGX_DONE参数表示不需要做任何事，直接调用ngx_http_finalize_connection方法，
+之后ngx_http_finalize_request方法结束。当某一种动作（如接收HTTP请求包体）正常结束而
+请求还有业务要继续处理时，多半都是传递NGX_DONE参数。这个
+ngx_http_finalize_connection方法还会去检查引用计数情况，并不一定会销毁请求-----luguifang*/
     if (rc == NGX_DONE) {
         ngx_http_finalize_connection(r);
         return;
@@ -1947,15 +1950,20 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         c->error = 1;
         return;
     }
-
+	/*首先检查rc参数。如果rc为NGX_DECLINED，
+	NGX_DECLINED参数表示请求还需要按照11个HTTP阶段继续处理下去*/
     if (rc == NGX_DECLINED) {
+		/*首先会把ngx_http_request_t结构体的write_event_handler设为ngx_http_core_run_phases方法。同时，
+		将请求的content_handler成员置为NULL空指针，这个成员是一种用于在NGX_HTTP_CONTENT_PHASE阶段处理请求的方式，将其设置为NULL是为了让
+		ngx_http_core_content_phase方法，可以继续调用NGX_HTTP_CONTENT_PHASE阶段的其他处理方法-----luguifang*/
         r->content_handler = NULL;
         r->write_event_handler = ngx_http_core_run_phases;
         ngx_http_core_run_phases(r);
         return;
     }
-
+	
     if (r != r->main && r->post_subrequest) {
+		/*如果是子请求那么调用post_subrequest下的handler回调方法-----luguifang*/
         rc = r->post_subrequest->handler(r, r->post_subrequest->data, rc);
     }
 
@@ -1971,11 +1979,14 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         if (r->main->blocked) {
             r->write_event_handler = ngx_http_request_finalizer;
         }
-
+		/*直接调用ngx_http_terminate_request方法强制结束请求，同时，
+ngx_http_finalize_request方法结束*/
         ngx_http_terminate_request(r, rc);
         return;
     }
-
+/*如果rc为NGX_HTTP_CREATED、NGX_HTTP_NO_CONTENT或者大于或等于
+NGX_HTTP_SPECIAL_RESPONSE，则表示请求的动作是上传文件，或者HTTP模块需要
+HTTP框架构造并发送响应码大于或等于300以上的特殊响应------luguifang*/
     if (rc >= NGX_HTTP_SPECIAL_RESPONSE
         || rc == NGX_HTTP_CREATED
         || rc == NGX_HTTP_NO_CONTENT)
@@ -1984,7 +1995,9 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
             ngx_http_terminate_request(r, rc);
             return;
         }
-
+		/*检查当前请求的main是否指向自己，如果是，这个请求就是来自客户端的原始请求
+（非子请求），这时检查读/写事件的timer_set标志位，如果timer_set为1，则表明事件在定时
+器中，需要调用ngx_del_timer方法把读/写事件从定时器中移除----luguifang*/
         if (r == r->main) {
             if (c->read->timer_set) {
                 ngx_del_timer(c->read);
@@ -1994,16 +2007,21 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
                 ngx_del_timer(c->write);
             }
         }
-
+		/*设置读/写事件的回调方法为ngx_http_request_handler方法*/
         c->read->handler = ngx_http_request_handler;
         c->write->handler = ngx_http_request_handler;
-
+		/*调用ngx_http_special_response_handler方法，该方法负责根据rc参数构造完整的
+HTTP响应。rc要么是表示上传成功的201或者204，要么就是表示异步的300以上的响应码，对于这些情况，都是可以
+让HTTP框架独立构造响应包的------luguifang*/
         ngx_http_finalize_request(r, ngx_http_special_response_handler(r, rc));
         return;
     }
 
     if (r != r->main) {
-
+		/*由于当前请求是子请求，那么正常情况下需要跳到它的父请求上，激活父请求继续
+向下执行，所以这一步首先根据ngx_http_request_t结构体的parent成员找到父请求，再构造一
+个ngx_http_posted_request_t结构体把父请求放置其中，最后把该结构体添加到原始请求的
+posted_requests链表中-----luguifang*/
         if (r->buffered || r->postponed) {
 
             if (ngx_http_set_write_handler(r) != NGX_OK) {
@@ -2072,7 +2090,10 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 
         return;
     }
-
+	/*如果是原始请求，那么还需要检查out缓冲区内是否还有没发送完的响应
+	当HTTP响应过大，无法一次性发送给客户端时，需要调用ngx_http_finalize_request方法结束请求，
+	而该方法会ngx_http_writer方法注册给epoll和定时器，当连接再次可写时就会继续发送剩余的响应。
+	*/
     if (r->buffered || c->buffered || r->postponed || r->blocked) {
 
         if (ngx_http_set_write_handler(r) != NGX_OK) {
@@ -2099,7 +2120,8 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
     if (ngx_http_post_action(r) == NGX_OK) {
         return;
     }
-
+	/*真的要结束请求了。首先判断读/写事件的timer_set标志位，如果timer_set
+为1，则需要把相应的读/写事件从定时器中移除*/
     if (c->read->timer_set) {
         ngx_del_timer(c->read);
     }
@@ -2184,11 +2206,13 @@ ngx_http_finalize_connection(ngx_http_request_t *r)
     ngx_http_core_loc_conf_t  *clcf;
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
-
+	/*查看原始请求引用计数，如果不等于1 则表示还有多个动作操作着请求---luguifang*/
     if (r->main->count != 1) {
-
+		/*discard_body 为1则表示正在丢弃包体这时会再一次把请求的read_event_handler成员设为
+ngx_http_discarded_request_body_handler方法---luguifang*/
         if (r->discard_body) {
             r->read_event_handler = ngx_http_discarded_request_body_handler;
+			/*将读事件添加到定时器中*/
             ngx_add_timer(r->connection->read, clcf->lingering_timeout);
 
             if (r->lingering_time == 0) {
@@ -2196,26 +2220,32 @@ ngx_http_finalize_connection(ngx_http_request_t *r)
                                       + (time_t) (clcf->lingering_time / 1000);
             }
         }
-
+		/*ngx_http_close_request方法结束请求---luguifang*/
         ngx_http_close_request(r, 0);
         return;
     }
-
+	/*检查keepalive成员，如果keepalive 成员为1 则说明这个请求需要释放但tcp链接还是需要复用----luguifang*/
     if (!ngx_terminate
          && !ngx_exiting
          && r->keepalive
          && clcf->keepalive_timeout > 0)
-    {
+    {	
+    /*调用ngx_http_set_keepalive方法将当前连接设为keepalive状态。它实际上会把表示请
+	求的ngx_http_request_t结构体释放，却又不会调用ngx_http_close_connection方法关闭连接，同
+	时也在检测keepalive连接是否超时----luguifang*/
         ngx_http_set_keepalive(r);
         return;
     }
-
+	/*检测请求的lingering_close成员，如果lingering_close为1，则说明需要延迟关闭请求，这时也不能真的去
+结束请求------luguifang*/
     if (clcf->lingering_close == NGX_HTTP_LINGERING_ALWAYS
         || (clcf->lingering_close == NGX_HTTP_LINGERING_ON
             && (r->lingering_close
                 || r->header_in->pos < r->header_in->last
                 || r->connection->read->ready)))
     {
+    	/*调用ngx_http_set_lingering_close方法延迟关闭请求。实际上，这个方法的意义就在于
+把一些必须做的事情做完（如接收用户端发来的字符流）再关闭连接-----luguifang*/
         ngx_http_set_lingering_close(r);
         return;
     }
@@ -2244,6 +2274,10 @@ ngx_http_set_write_handler(ngx_http_request_t *r)
     }
 
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+	/*如果写事件的delayed标志位为0，就把写事件添加到定时器中，超时时间就是
+nginx.conf文件中的send_timeout配置项；当然，如果delayed为1，则表示限制发送速度，
+在需要限速时，根据计算得到的超时时间已经把写事件添加到定时器中
+了。再调用ngx_handle_write_event方法把写事件添加到epoll中*/
     if (!wev->delayed) {
         ngx_add_timer(wev, clcf->send_timeout);
     }
@@ -2272,8 +2306,11 @@ ngx_http_writer(ngx_http_request_t *r)
                    "http writer handler: \"%V?%V\"", &r->uri, &r->args);
 
     clcf = ngx_http_get_module_loc_conf(r->main, ngx_http_core_module);
-
+	
+	/*检查连接上的写事件是否超时-----luguifang*/
     if (wev->timedout) {
+		/*如果delayed为0 这表示不是因为限速导致的超时，应该网络异常导致客户端长时间不响应导致的超时
+		此时将使用ngx_http_finalize_request结束请求-----luguifang*/
         if (!wev->delayed) {
             ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT,
                           "client timed out");
@@ -2282,13 +2319,14 @@ ngx_http_writer(ngx_http_request_t *r)
             ngx_http_finalize_request(r, NGX_HTTP_REQUEST_TIME_OUT);
             return;
         }
-
+		/*限速引起的超时，那么此时可以把写事件的timedout标志位和delayed标志位都重置为0----luguifang*/
         wev->timedout = 0;
         wev->delayed = 0;
-
+		/*检查TCP连接上是否可以发送数据------luguifang*/
         if (!wev->ready) {
+			/*如果没有准备好则将写事件添加到定时器中，这里的超时时间就是配置文件中的send_timeout参数----luguifang*/
             ngx_add_timer(wev, clcf->send_timeout);
-
+			/*调用ngx_handle_write_event方法将写事件添加到epoll等事件收集器中---luguifang*/
             if (ngx_handle_write_event(wev, clcf->send_lowat) != NGX_OK) {
                 ngx_http_close_request(r, 0);
             }
@@ -2308,7 +2346,9 @@ ngx_http_writer(ngx_http_request_t *r)
 
         return;
     }
-
+	/*调用ngx_http_output_filter方法发送响应，其中第2个参数（也就是表示需要发送的缓
+	冲区）为NULL指针。这意味着，需要调用各包体过滤模块处理out缓冲区中的剩余内容，最
+	后调用ngx_http_write_filter方法把响应发送出去------luguifang*/
     rc = ngx_http_output_filter(r, NULL);
 
     ngx_log_debug3(NGX_LOG_DEBUG_HTTP, c->log, 0,
@@ -2319,7 +2359,12 @@ ngx_http_writer(ngx_http_request_t *r)
         ngx_http_finalize_request(r, rc);
         return;
     }
+	/*
+	发送响应后，查看ngx_http_request_t结构体中的buffered和postponed标志位，如果任一个
+不为0，则意味着没有发送完out中的全部响应，请求main指针指向请求自身，表示这个请求是原始请求，再检查与客户端间的连接ngx_connection_t结构体中的
+buffered标志位，如果buffered不为0，同样表示没有发送完out中的全部响应，这时需要把写事件加入到定时器和epoll中
 
+	*/
     if (r->buffered || r->postponed || (r == r->main && c->buffered)) {
 
         if (!wev->delayed) {
@@ -2332,12 +2377,14 @@ ngx_http_writer(ngx_http_request_t *r)
 
         return;
     }
-
+	/*走到此处时表明 out中的响应数据已经发送完毕-----luguifang*/
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, wev->log, 0,
                    "http writer done: \"%V?%V\"", &r->uri, &r->args);
-
+	/*将请求的write_event_handler方法置为ngx_http_request_empty_handler，也就是说，如
+果这个请求的连接上再有可写事件，将不做任何处理*/
     r->write_event_handler = ngx_http_request_empty_handler;
-
+	/*调用ngx_http_finalize_request方法结束请求，其中第2个参数传入的是
+ngx_http_output_filter方法的返回值-----luguifang*/
     ngx_http_finalize_request(r, rc);
 }
 
@@ -2972,6 +3019,12 @@ ngx_http_post_action(ngx_http_request_t *r)
 static void
 ngx_http_close_request(ngx_http_request_t *r, ngx_int_t rc)
 {
+	/*由ngx_http_request_t结构体的main成员中取出对应的原始请求（当然，可能就
+是这个请求本身），再取出count引用计数并减1。然后，检查count引用计数是否已经为0，
+以及blocked标志位是否为0。如果count已经为0，则证明请求没有其他动作要使用了，同时
+blocked标志位也为0，表示没有HTTP模块还需要处理请求，所以此时请求可以真正释放
+如果count引用计数大于0，或者blocked大于0，这样都不可以结束请求，
+ngx_http_close_request方法直接结束。-----luguifang*/
     ngx_connection_t  *c;
 
     r = r->main;
@@ -2985,11 +3038,14 @@ ngx_http_close_request(ngx_http_request_t *r, ngx_int_t rc)
     }
 
     r->count--;
-
+	/*ngx_http_request_t结构体中的blocked标志位主要
+由异步I/O使用，ngx_http_close_request方法正是通过blocked配合着异步I/O工作，如果AIO
+上下文中还在处理这个请求，blocked必然是大于0的，这时ngx_http_close_request方法不能结
+束请求*/
     if (r->count || r->blocked) {
         return;
     }
-
+	/*释放请求关闭链接*/
     ngx_http_free_request(r, rc);
     ngx_http_close_connection(c);
 }
@@ -3012,7 +3068,8 @@ ngx_http_free_request(ngx_http_request_t *r, ngx_int_t rc)
         ngx_log_error(NGX_LOG_ALERT, log, 0, "http request already closed");
         return;
     }
-
+	/*循环地遍历请求ngx_http_request_t结构体中的cleanup链表，依次调用每一个
+	ngx_http_cleanup_pt方法释放资源-----luguifang*/
     for (cln = r->cleanup; cln; cln = cln->next) {
         if (cln->handler) {
             cln->handler(cln->data);
@@ -3034,7 +3091,9 @@ ngx_http_free_request(ngx_http_request_t *r, ngx_int_t rc)
     if (rc > 0 && (r->headers_out.status == 0 || r->connection->sent == 0)) {
         r->headers_out.status = rc;
     }
-
+	/*在11个ngx_http_phases阶段中，最后一个阶段叫做NGX_HTTP_LOG_PHASE，它是用
+来记录客户端的访问日志的。在这一步骤中，将会依次调用NGX_HTTP_LOG_PHASE阶段的
+所有回调方法记录日志。官方的ngx_http_log_module模块就是在这里记录access log的-------luguifang*/
     log->action = "logging request";
 
     ngx_http_log_request(r);
@@ -3064,7 +3123,8 @@ ngx_http_free_request(ngx_http_request_t *r, ngx_int_t rc)
     r->request_line.len = 0;
 
     r->connection->destroyed = 1;
-
+	/*销毁请求ngx_http_request_t结构体中的pool内存池。在销毁内存池时，挂在该内存池
+下的由各Nginx模块实现的ngx_pool_cleanup_t方法也会被调用------luguifang*/
     ngx_destroy_pool(r->pool);
 }
 

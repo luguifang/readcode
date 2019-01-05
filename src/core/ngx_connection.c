@@ -820,7 +820,9 @@ ngx_close_connection(ngx_connection_t *c)
         ngx_log_error(NGX_LOG_ALERT, c->log, 0, "connection already closed");
         return;
     }
-
+	/*将连接的读/写事件从定时器中取出。实际上就是检查读/写事件的time_set标志
+	位，如果为1，则证明事件在定时器中，那么需要调用ngx_del_timer方法把事件从定时器中移
+	除 ------luguifang*/
     if (c->read->timer_set) {
         ngx_del_timer(c->read);
     }
@@ -828,6 +830,11 @@ ngx_close_connection(ngx_connection_t *c)
     if (c->write->timer_set) {
         ngx_del_timer(c->write);
     }
+	/*调用ngx_del_conn宏（或者ngx_del_event宏）将读/写事件从epoll中移除当事件模块是epoll模块
+	时，就是从epoll中移除这个连接的读/写事件。同时，如果这个事件在
+	ngx_posted_accept_events或者ngx_posted_events队列中，还需要调用ngx_delete_posted_event宏
+	把事件从post事件队列中移除----luguifang*/
+
 
     if (ngx_del_conn) {
         ngx_del_conn(c, NGX_CLOSE_EVENT);
@@ -889,12 +896,14 @@ ngx_close_connection(ngx_connection_t *c)
     ngx_reusable_connection(c, 0);
 
     log_error = c->log_error;
+	/*调用ngx_free_connection方法把表示连接的ngx_connection_t结构体归还给ngx_cycle_t
+	核心结构体的空闲连接池free_connections*/
 
     ngx_free_connection(c);
 
     fd = c->fd;
     c->fd = (ngx_socket_t) -1;
-
+	/*调用系统提供的close方法关闭这个TCP连接套接字 luguifang*/
     if (ngx_close_socket(fd) == -1) {
 
         err = ngx_socket_errno;
