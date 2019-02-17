@@ -413,7 +413,10 @@ ngx_http_upstream_init(ngx_http_request_t *r)
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http init upstream, client timer: %d", c->read->timer_set);
-
+	/*先检查请求对应于客户端的连接，这个连接上的读事件如果在定时器中，也就是
+	说，读事件的timer_set标志位为1，那么调用ngx_del_timer方法把这个读事件从定时器中移
+	除。因为一旦启动upstream机制，就不应该对客户端的读操作带有超
+	时时间的处理，请求的主要触发事件将以与上游服务器的连接为主----luguifang*/
     if (c->read->timer_set) {
         ngx_del_timer(c->read);
     }
@@ -479,7 +482,10 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
 #endif
 
     u->store = (u->conf->store || u->conf->store_lengths);
-
+	/*检查标志为如果store标志位为0、请求ngx_http_request_t结构体中的post_action标志位为0
+	就会设置Nginx与下游客户端之间TCP连接的检查方法实际上，
+	这两个方法都会通过ngx_http_upstream_check_broken_connection方法检查Nginx
+	与下游的连接是否正常，如果出现错误，就会立即终止连接------luguifang*/
     if (!u->store && !r->post_action && !u->conf->ignore_client_abort) {
         r->read_event_handler = ngx_http_upstream_rd_check_broken_connection;
         r->write_event_handler = ngx_http_upstream_wr_check_broken_connection;
@@ -488,7 +494,9 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
     if (r->request_body) {
         u->request_bufs = r->request_body->bufs;
     }
-
+	/*调用请求中ngx_http_upstream_t结构体里由某个HTTP模块实现的create_request方法，
+构造发往上游服务器的请求（请求中的内容是设置到request_bufs缓冲区链表中的）。如果
+create_request方法没有返回NGX_OK，则upstream机制结束-----luguifang*/
     if (u->create_request(r) != NGX_OK) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
@@ -527,7 +535,11 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
 
         ngx_memzero(u->state, sizeof(ngx_http_upstream_state_t));
     }
-
+	/*ngx_http_cleanup_t是用于清理资源的结构体，还说明了它何时
+	会被执行。在这一步中，upstream机制就用到了ngx_http_cleanup_t。首先，调用
+	ngx_http_cleanup_add方法向这个请求main成员指向的原始请求中的cleanup链表末尾添加一个
+	新成员，然后把handler回调方法设为ngx_http_upstream_cleanup，这意味着当请求结束时，一
+	定会调用ngx_http_upstream_cleanup方法------luguifang*/
     cln = ngx_http_cleanup_add(r, 0);
     if (cln == NULL) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -628,7 +640,7 @@ found:
                                            NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
-
+	/*调用ngx_http_upstream_connect方法向上游服务器发起连接----luguifang*/
     ngx_http_upstream_connect(r, u);
 }
 
