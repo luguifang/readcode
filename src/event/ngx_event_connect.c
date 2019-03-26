@@ -26,7 +26,9 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     if (rc != NGX_OK) {
         return rc;
     }
-
+	/*
+	调用socket方法建立一个TCP套接字，同时这个套接字需要设置为非阻塞模式----luguifang
+	*/
     s = ngx_socket(pc->sockaddr->sa_family, SOCK_STREAM, 0);
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, pc->log, 0, "socket %d", s);
@@ -37,7 +39,9 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         return NGX_ERROR;
     }
 
-
+	/*由于Nginx的事件框架要求每个连接都由一个ngx_connection_t结构体来承载，因此这
+	一步将调用ngx_get_connection方法，由ngx_cycle_t核心结构体中free_connections指向的空闲连
+	接池处获取到一个ngx_connection_t结构体，作为承载Nginx与上游服务器间的TCP连接------luguifang*/
     c = ngx_get_connection(s, pc->log);
 
     if (c == NULL) {
@@ -50,6 +54,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     }
 
     if (pc->rcvbuf) {
+		/*套接字选项设置，设置接受缓冲区大小，同时使用该函数也能设置接受和发送超时时间等*/
         if (setsockopt(s, SOL_SOCKET, SO_RCVBUF,
                        (const void *) &pc->rcvbuf, sizeof(int)) == -1)
         {
@@ -114,7 +119,8 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     wev->own_lock = &c->lock;
 
 #endif
-
+	/*调用add_conn方法把刚刚建立的套接字添加到epoll中，表示如果这个套接字上出现了预期的网
+	络事件，则希望epoll能够回调它的handler方法-------luguifang*/
     if (ngx_add_conn) {
         if (ngx_add_conn(c) == NGX_ERROR) {
             goto failed;
@@ -124,6 +130,9 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     ngx_log_debug3(NGX_LOG_DEBUG_EVENT, pc->log, 0,
                    "connect to %V, fd:%d #%d", pc->name, s, c->number);
 
+	/*调用connect方法向上游服务器发起TCP连接，作为非阻塞套接字，connect方法可能
+	立刻返回连接建立成功，也可能告诉用户继续等待上游服务器的响应，对connect连接是否建
+	立成功会在后续检查-----luguifang*/
     rc = connect(s, pc->sockaddr, pc->socklen);
 
     if (rc == -1) {

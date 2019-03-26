@@ -911,9 +911,13 @@ ngx_http_upstream_handler(ngx_event_t *ev)
     ngx_http_log_ctx_t   *ctx;
     ngx_http_upstream_t  *u;
 
+	/*由事件的data成员取得ngx_connection_t连接。注意，这个连接并不是
+	Nginx与客户端的连接，而是Nginx与上游服务器间的连接*/
     c = ev->data;
+	/*由连接的data成员取得ngx_http_request_t结构体*/
     r = c->data;
-
+	/*由请求的upstream成员取得表示upstream机制的
+	Ngx_http_upstream_t结构体*/
     u = r->upstream;
     c = r->connection;
 
@@ -924,12 +928,16 @@ ngx_http_upstream_handler(ngx_event_t *ev)
                    "http upstream request: \"%V?%V\"", &r->uri, &r->args);
 
     if (ev->write) {
+		/*当Nginx与上游服务器间TCP连接的可写事件被触发时，
+	upstream的write_event_handler方法会被调用*/
         u->write_event_handler(r, u);
 
     } else {
+    /*当Nginx与上游服务器间TCP连接的可读事件被触发时，
+	upstream的read_event_handler方法会被调用*/
         u->read_event_handler(r, u);
     }
-
+	/*处理post请求*/
     ngx_http_run_posted_requests(c);
 }
 
@@ -1142,11 +1150,14 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     c = u->peer.connection;
 
     c->data = r;
-
+	/*将这个连接ngx_connection_t上的读/写事件的handler回调方法都设置为
+	ngx_http_upstream_handler-----luguifang*/
     c->write->handler = ngx_http_upstream_handler;
     c->read->handler = ngx_http_upstream_handler;
-
+	/*将upstream机制的write_event_handler方法设为ngx_http_upstream_send_request_handler---luguifang*/
     u->write_event_handler = ngx_http_upstream_send_request_handler;
+	/*设置upstream机制的read_event_handler方法为ngx_http_upstream_process_header，也就
+是由ngx_http_upstream_process_header方法接收上游服务器的响应 -----luguifang*/
     u->read_event_handler = ngx_http_upstream_process_header;
 
     c->sendfile &= r->connection->sendfile;
@@ -1199,7 +1210,9 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     }
 
     u->request_sent = 0;
-
+	/*这一步处理非阻塞的连接尚未成功建立时的动作
+	这一步将调用ngx_add_timer方法把写事件添加到定时器中，超时时间就是
+	ngx_http_upstream_conf_t结构体中的connect_timeout成员，这是在设置建立TCP连接的超时时间*/
     if (rc == NGX_AGAIN) {
         ngx_add_timer(c->write, u->conf->connect_timeout);
         return;
@@ -1213,7 +1226,8 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     }
 
 #endif
-
+	/*如果已经成功建立连接，则调用ngx_http_upstream_send_request方法向上游服务器发
+送请求------luguifang*/
     ngx_http_upstream_send_request(r, u);
 }
 
