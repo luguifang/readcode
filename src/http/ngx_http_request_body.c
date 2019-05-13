@@ -382,7 +382,7 @@ ngx_http_do_read_client_request_body(ngx_http_request_t *r)
         ngx_del_timer(c->read);
     }
 	/*如果缓冲区中还有未写入文件的内容，调用ngx_http_write_request_body方法把最后
-	的包体内容也写入文件luguifang*//
+	的包体内容也写入文件luguifang*/
     if (rb->temp_file || r->request_body_in_file_only) {
 
         /* save the last part */
