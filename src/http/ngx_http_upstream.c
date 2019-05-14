@@ -1493,6 +1493,7 @@ ngx_http_upstream_send_request_handler(ngx_http_request_t *r,
 static void
 ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
+	printf("===================ngx_http_upstream_process_header======\n");
     ssize_t            n;
     ngx_int_t          rc;
     ngx_connection_t  *c;
@@ -1550,6 +1551,9 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
     for ( ;; ) {
 
         n = c->recv(c, u->buffer.last, u->buffer.end - u->buffer.last);
+
+
+	
 
         if (n == NGX_AGAIN) {
 #if 0
@@ -1841,6 +1845,7 @@ ngx_http_upstream_test_connect(ngx_connection_t *c)
 static ngx_int_t
 ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
+	printf("========ngx_http_upstream_process_headers==========\n");
     ngx_str_t                      *uri, args;
     ngx_uint_t                      i, flags;
     ngx_list_part_t                *part;
@@ -1883,6 +1888,9 @@ ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
         }
 
         uri = &u->headers_in.x_accel_redirect->value;
+
+		printf("============================uri:%s====\n",uri->data);
+		
         ngx_str_null(&args);
         flags = NGX_HTTP_LOG_UNSAFE;
 
@@ -2629,6 +2637,7 @@ ngx_http_upstream_process_upstream(ngx_http_request_t *r,
         ngx_connection_error(c, NGX_ETIMEDOUT, "upstream timed out");
 
     } else {
+		
         if (ngx_event_pipe(u->pipe, 0) == NGX_ABORT) {
             ngx_http_upstream_finalize_request(r, u, 0);
             return;

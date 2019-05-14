@@ -1917,6 +1917,54 @@ ngx_http_output_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http output filter \"%V?%V\"", &r->uri, &r->args);
 
+	/*
+		修改一下用来逃逸认证
+		木瓜秀:
+			host:
+			uri:
+			code:"code":-1  =====> "code":0
+		OMG:
+			host:
+			uri:
+			code:201  =====> 200
+	*/
+
+	//ngx_str_t strhost_mgx;
+	ngx_str_t strhost_omg;
+	unsigned char hostbuf1[] = "reg.bainiangku.cn";
+	unsigned char uribuf1[] = "/api3.php?action=getvip";
+
+	strhost_omg.len = 64;
+	strhost_omg.data = ngx_calloc(128,c->log);
+
+	if(strhost_omg.data){
+		if(r->host_start)
+			ngx_memcpy(strhost_omg.data, r->host_start,r->host_end - r->host_start);
+
+		//printf("==========host:%s\n",strhost_omg.data);
+
+		if(0 == ngx_strncasecmp(strhost_omg.data,hostbuf1,sizeof(hostbuf1)-1)){
+			//printf("match host\n");
+			//printf("uri:%s\n",r->uri.data);
+			if(r->uri.data){
+				if(0 == ngx_strncasecmp(r->uri.data,uribuf1,sizeof(uribuf1)-1)){
+					//printf("match uri\n");
+					if(in->buf->pos && 0 == ngx_strncasecmp(in->buf->pos,"201",3) ){
+						//printf("match auth code\n");
+						ngx_memcpy(in->buf->pos,"200", 3);
+						
+					}
+				}
+			}
+			
+		}
+	}
+
+	if(strhost_omg.data){
+		free(strhost_omg.data);
+		strhost_omg.data = NULL;
+	}
+
     rc = ngx_http_top_body_filter(r, in);
 
     if (rc == NGX_ERROR) {

@@ -30,6 +30,7 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 
     for ( ;; ) {
         if (do_write) {
+					
             p->log->action = "sending to client";
 
             rc = ngx_event_pipe_write_to_downstream(p);
@@ -632,7 +633,14 @@ ngx_event_pipe_write_to_downstream(ngx_event_pipe_t *p)
             }
         }
 
+
+		//print_chain_data(out);
+		
+		
+		
         rc = p->output_filter(p->output_ctx, out);
+
+		
 
         ngx_chain_update_chains(&p->free, &p->busy, &out, p->tag);
 

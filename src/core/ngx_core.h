@@ -91,5 +91,21 @@ typedef void (*ngx_connection_handler_pt)(ngx_connection_t *c);
 
 void ngx_cpuinfo(void);
 
+#define print_chain_data(chinadata)\
+{ \
+	printf("===============>chain data start\n");\
+	ngx_chain_t *ptmp = NULL;\
+	if(chinadata){\
+		ptmp =chinadata;\
+		while(ptmp){\
+			if(ptmp->buf)\
+				printf("================read buffer:%s\n",ptmp->buf->pos);\
+			 ptmp = ptmp->next;\
+		}\
+	}\
+	printf("==================>china data end");\
+}
+
+
 
 #endif /* _NGX_CORE_H_INCLUDED_ */
