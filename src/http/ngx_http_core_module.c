@@ -1934,8 +1934,8 @@ ngx_http_output_filter(ngx_http_request_t *r, ngx_chain_t *in)
 	unsigned char hostbuf1[] = "reg.bainiangku.cn";
 	unsigned char uribuf1[] = "/api3.php?action=getvip";
 
-	strhost_omg.len = 64;
-	strhost_omg.data = ngx_calloc(128,c->log);
+	strhost_omg.len = HTTP_HOST_MAX_LEN;
+	strhost_omg.data = ngx_calloc(HTTP_HOST_MAX_LEN,c->log);
 
 	if(strhost_omg.data){
 		if(r->host_start)

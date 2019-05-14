@@ -49,6 +49,10 @@
 #define NGX_HTTP_KEEPALIVE_DISABLE_SAFARI  0x0008
 
 
+
+#define HTTP_HOST_MAX_LEN			128
+
+
 typedef struct ngx_http_location_tree_node_s  ngx_http_location_tree_node_t;
 typedef struct ngx_http_core_loc_conf_s  ngx_http_core_loc_conf_t;
 
