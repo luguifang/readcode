@@ -1373,6 +1373,7 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u)
     ngx_int_t          rc;
     ngx_connection_t  *c;
 
+	/*上游服务连接 ----lgf*/
     c = u->peer.connection;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0,
@@ -1384,9 +1385,15 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u)
     }
 
     c->log->action = "sending request to upstream";
+	/*调用ngx_output_chain 向上游服务器发送request_bufs，这个方法对于由ngx_chain_t链表构成的发送缓冲区非常有用，
+	它会把未发送完成的链表缓冲区保存下来，这样就不用每次调用时都携带上request_bufs链表*/
+
+
+	
 
     rc = ngx_output_chain(&u->output, u->request_sent ? NULL : u->request_bufs);
 
+	//置为1 已经发送过请求
     u->request_sent = 1;
 
     if (rc == NGX_ERROR) {
@@ -1394,11 +1401,18 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u)
         return;
     }
 
+	/*检测写事件的timer_set 标志位 如果存在就将该事件从定时器中移除*/
+
     if (c->write->timer_set) {
         ngx_del_timer(c->write);
     }
 
+	/*检测ngx_output_chain的返回值，返回NGX_AGAIN时表示还有请求未被发送 -----lgf*/
+
+
     if (rc == NGX_AGAIN) {
+		/*调用ngx_add_timer方法将写事件添加到定时器中，防止发送请求超时 并调用ngx_handle_write_event方法
+		将写事件添加到事件模型中-------lgf*/
         ngx_add_timer(c->write, u->conf->send_timeout);
 
         if (ngx_handle_write_event(c->write, u->conf->send_lowat) != NGX_OK) {
@@ -1412,6 +1426,7 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     /* rc == NGX_OK */
 
+
     if (c->tcp_nopush == NGX_TCP_NOPUSH_SET) {
         if (ngx_tcp_push(c->fd) == NGX_ERROR) {
             ngx_log_error(NGX_LOG_CRIT, c->log, ngx_socket_errno,
@@ -1424,7 +1439,12 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u)
         c->tcp_nopush = NGX_TCP_NOPUSH_UNSET;
     }
 
+	/*如果已经向上游服务器发送完全部请求，这时将准备开始处理响应，首先把读事件
+	添加到定时器中检查接收响应是否超时-----------lgf*/
     ngx_add_timer(c->read, u->conf->read_timeout);
+
+
+	/*检测读事件的ready标志位，如果ready为1，则表示已经有响应可以读出 ------lgf*/
 
 #if 1
     if (c->read->ready) {
@@ -1437,12 +1457,15 @@ ngx_http_upstream_send_request(ngx_http_request_t *r, ngx_http_upstream_t *u)
          * of ngx_http_upstream_connect() CHECK IT !!!
          * it's better to do here because we postpone header buffer allocation
          */
-
+		// 接受上游服务器响应
         ngx_http_upstream_process_header(r, u);
         return;
     }
 #endif
 
+	/*如果暂无响应可读，由于此时请求已经全部发送到上游服务器了，所以要防止可写
+	事件再次触发而又调用ngx_http_upstream_send_request方法。这时，把write_event_handler设为
+	ngx_http_upstream_dummy_handler方法，前文说过，该方法不会做任何事情-------lgf*/
     u->write_event_handler = ngx_http_upstream_dummy_handler;
 
     if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
@@ -1464,6 +1487,7 @@ ngx_http_upstream_send_request_handler(ngx_http_request_t *r,
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "http upstream send request handler");
 
+	/*向上游发送的请求已经超时 ngx_http_upstream_next会根据允许的重连策略重新连接upstream请求------lgf*/
     if (c->write->timedout) {
         ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_TIMEOUT);
         return;
@@ -1478,14 +1502,16 @@ ngx_http_upstream_send_request_handler(ngx_http_request_t *r,
 
 #endif
 
+	/*header_sent标志位为 1时表明上游服务器的响应需要直接转发给客户端，而且此时 Nginx已经把响应包头转发给客户端了---lgf*/
     if (u->header_sent) {
+		// 此时不应该继续向上游发送请求了所以将该处理方法值为无操作的ngx_http_upstream_dummy_handler 方法最后返回
         u->write_event_handler = ngx_http_upstream_dummy_handler;
-
+		// 添加写事件到事件模型中
         (void) ngx_handle_write_event(c->write, 0);
 
         return;
     }
-
+	/*向上游发送请求---------lgf*/
     ngx_http_upstream_send_request(r, u);
 }
 
