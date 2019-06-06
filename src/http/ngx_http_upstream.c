@@ -1531,15 +1531,23 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     c->log->action = "reading response header from upstream";
 
+	/*检查读事件是否超时如果超时尝试下一个节点*/
     if (c->read->timedout) {
         ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_TIMEOUT);
         return;
     }
 
+	/*检查一下request_sent 标志位，如果为0 就需要检测一下与上游连接情况，如果不能正常连接则
+	尝试下一个上游节点--------lgf*/
     if (!u->request_sent && ngx_http_upstream_test_connect(c) != NGX_OK) {
         ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);
         return;
     }
+
+
+	/*检查ngx_http_upstream_t结构体中接收响应头部的buffer缓冲区，如果它的start成员指
+	向NULL，说明缓冲区还未分配内存，这时将按照ngx_http_upstream_conf_t配置结构体中的
+	buffer_size成员指定的大小来为buffer缓冲区分配内存。-------lgf*/
 
     if (u->buffer.start == NULL) {
         u->buffer.start = ngx_palloc(r->pool, u->conf->buffer_size);
@@ -1575,17 +1583,18 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
     }
 
     for ( ;; ) {
+		/*调用recv方法在buffer缓冲区中读取上游服务器发来的响应。-----lgf*/
 
         n = c->recv(c, u->buffer.last, u->buffer.end - u->buffer.last);
 
 
 	
-
+		/*返回值是NGX_AGAIN 表示还要继续接受响应*/
         if (n == NGX_AGAIN) {
 #if 0
             ngx_add_timer(rev, u->read_timeout);
 #endif
-
+			/*调用ngx_handle_read_event方法将读事件再添加到epoll中，等待读事件的下次触发-----lgf*/
             if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
                 ngx_http_upstream_finalize_request(r, u,
                                                NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -1599,7 +1608,7 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
             ngx_log_error(NGX_LOG_ERR, c->log, 0,
                           "upstream prematurely closed connection");
         }
-
+		/*如果返回值是0 传递NGX_HTTP_UPSTREAM_FT_ERROR 寻找错误处理对应的下一个上游节点------lgf*/
         if (n == NGX_ERROR || n == 0) {
             ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);
             return;
@@ -1613,8 +1622,11 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
         u->peer.cached = 0;
 #endif
 
+		/*调用HTTP模块实现的process_header方法解析响应头部------lgf*/
         rc = u->process_header(r);
 
+		/*如果返回值是NGX_AGAIN 表示包头还没接受完，这时将检测buffer缓冲区是否用尽，如果缓冲区已经
+		用尽，则说明包头太大了，超出了缓冲区允许的大小*/
         if (rc == NGX_AGAIN) {
 
             if (u->buffer.last == u->buffer.end) {
@@ -1631,6 +1643,7 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
         break;
     }
+	/*如果返回NGX_HTTP_UPSTREAM_INVALID_HEADER 说明返回的响应头是无效的*/
 
     if (rc == NGX_HTTP_UPSTREAM_INVALID_HEADER) {
         ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_INVALID_HEADER);
@@ -1660,17 +1673,35 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
         }
     }
 
+	/*调用ngx_http_upstream_process_headers方法处理已经解析出的头部，该方法将会把已
+	经解析出的头部设置到请求ngx_http_request_t结构体的headers_out成员中，这样在调用
+	ngx_http_send_header方法发送响应包头给客户端时将会发送这些设置了的头部 -------lgf*/
+
+
     if (ngx_http_upstream_process_headers(r, u) != NGX_OK) {
         return;
     }
 
+	/*检查是否需要转发响应，ngx_http_request_t结构体中的subrequest_in_memory标志
+	位为1时表示不需要转发响应 -----lgf*/
+
     if (!r->subrequest_in_memory) {
+		/*调用ngx_http_upstream_send_response方法开始转发响应给客户端，同时
+		ngx_http_upstream_process_header方法执行完毕*/
+	
         ngx_http_upstream_send_response(r, u);
         return;
     }
 
     /* subrequest content in memory */
-
+	/*
+	不需要转发响应时，首先检查HTTP模块是否实现了用于处理包体的input_filter方法，如果没有实现，则
+	使用upstream定义的默认方法ngx_http_upstream_non_buffered_filter代替input_filter，其中
+	input_filter_ctx将会被设置为ngx_http_request_t结构体的指针。如果用户已经实现了input_filter
+	方法，则表示用户希望自己处理包体（如ngx_http_memcached_module模块），这时首先调用
+	input_filter_init方法为处理包体做初始化工作
+	*/
+	
     if (u->input_filter == NULL) {
         u->input_filter_init = ngx_http_upstream_non_buffered_filter_init;
         u->input_filter = ngx_http_upstream_non_buffered_filter;
@@ -1682,6 +1713,9 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
                                            NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
+
+	/*process_header方法调用完后，如果解析完包头后缓冲区中还有多余的字符，则
+	表示还接收到了包体，这时将调用input_filter方法第一次处理接收到的包体*/
 
     n = u->buffer.last - u->buffer.pos;
 
@@ -1701,6 +1735,8 @@ ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
         }
     }
 
+	/*设置upstream的read_event_handler为ngx_http_upstream_process_body_in_memory方
+	法，这也表示再有上游服务器发来响应包体，将由该方法来处理-----lgf*/
     u->read_event_handler = ngx_http_upstream_process_body_in_memory;
 
     ngx_http_upstream_process_body_in_memory(r, u);
