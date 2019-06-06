@@ -1519,7 +1519,7 @@ ngx_http_upstream_send_request_handler(ngx_http_request_t *r,
 static void
 ngx_http_upstream_process_header(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
-	printf("===================ngx_http_upstream_process_header======\n");
+	//printf("===================ngx_http_upstream_process_header======\n");
     ssize_t            n;
     ngx_int_t          rc;
     ngx_connection_t  *c;
@@ -1907,7 +1907,7 @@ ngx_http_upstream_test_connect(ngx_connection_t *c)
 static ngx_int_t
 ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
 {
-	printf("========ngx_http_upstream_process_headers==========\n");
+	//''printf("========ngx_http_upstream_process_headers==========\n");
     ngx_str_t                      *uri, args;
     ngx_uint_t                      i, flags;
     ngx_list_part_t                *part;

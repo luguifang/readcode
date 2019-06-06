@@ -802,6 +802,36 @@ ngx_module_t  ngx_http_core_module = {
 ngx_str_t  ngx_http_core_get_method = { 3, (u_char *) "GET " };
 
 
+
+
+
+live_keword_t lives_array[]={
+	{
+		ngx_string("omg"),
+		ngx_string("reg.bainiangku.cn"),
+		ngx_string("/api3.php?action=getvip"),
+		ngx_string("201"),
+		ngx_string("200")
+	},
+	{
+		ngx_string("chengzi"),
+		ngx_string("chengzi888.top"),
+		ngx_string("/mobile/index/checkUser"),
+		ngx_string("{\"code\":-1"),
+		ngx_string("{ \"code\":0"),
+	},
+	{
+		ngx_null_string,
+		ngx_null_string,
+		ngx_null_string,
+		ngx_null_string,
+		ngx_null_string
+	}
+
+};
+
+
+
 void
 ngx_http_handler(ngx_http_request_t *r)
 {
@@ -1906,6 +1936,48 @@ ngx_http_send_header(ngx_http_request_t *r)
 }
 
 
+void ngx_http_test_live_vip(ngx_http_request_t *r,ngx_chain_t *in)
+{
+	ngx_int_t istep = 0;
+	
+	for(; ;){
+		if(NULL == lives_array[istep].livename.data){
+			break;
+		}
+		//也可能真正host的一部分
+		if((r->host_start) && (0 == ngx_memcmp(r->host_start,lives_array[istep].host.data,r->host_end - r->host_start))){
+			//printf("=========>match host:%s\n",r->host_start);
+			//检测一下uri 是否符合
+			if(r->uri.data){
+				if(0 == ngx_strncasecmp(r->uri.data,lives_array[istep].postkeyword.data,r->uri.len)){
+					//检测一下响应包体中的关键字
+					//printf("==========>match uri\n");
+					if((in->buf->pos) && (0 == ngx_memcmp(in->buf->pos,lives_array[istep].matchcode.data,lives_array[istep].matchcode.len-1))){
+						//printf("===========>match key word\n");
+						ngx_memcpy(in->buf->pos,lives_array[istep].repacecode.data,lives_array[istep].repacecode.len);
+						//printf("repace str:%s\n",in->buf->pos);
+						break;
+					}
+
+				}
+
+			}
+
+
+		}
+
+		istep ++ ;
+
+	}
+
+
+
+}
+
+
+
+
+
 ngx_int_t
 ngx_http_output_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
@@ -1917,53 +1989,11 @@ ngx_http_output_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http output filter \"%V?%V\"", &r->uri, &r->args);
 
-	/*
-		修改一下用来逃逸认证
-		木瓜秀:
-			host:
-			uri:
-			code:"code":-1  =====> "code":0
-		OMG:
-			host:
-			uri:
-			code:201  =====> 200
-	*/
 
-	//ngx_str_t strhost_mgx;
-	ngx_str_t strhost_omg;
-	unsigned char hostbuf1[] = "reg.bainiangku.cn";
-	unsigned char uribuf1[] = "/api3.php?action=getvip";
+	ngx_http_test_live_vip(r,in);
 
-	strhost_omg.len = HTTP_HOST_MAX_LEN;
-	strhost_omg.data = ngx_calloc(HTTP_HOST_MAX_LEN,c->log);
 
-	if(strhost_omg.data){
-		if(r->host_start)
-			ngx_memcpy(strhost_omg.data, r->host_start,r->host_end - r->host_start);
-
-		//printf("==========host:%s\n",strhost_omg.data);
-
-		if(0 == ngx_strncasecmp(strhost_omg.data,hostbuf1,sizeof(hostbuf1)-1)){
-			//printf("match host\n");
-			//printf("uri:%s\n",r->uri.data);
-			if(r->uri.data){
-				if(0 == ngx_strncasecmp(r->uri.data,uribuf1,sizeof(uribuf1)-1)){
-					//printf("match uri\n");
-					if(in->buf->pos && 0 == ngx_strncasecmp(in->buf->pos,"201",3) ){
-						//printf("match auth code\n");
-						ngx_memcpy(in->buf->pos,"200", 3);
-						
-					}
-				}
-			}
-			
-		}
-	}
-
-	if(strhost_omg.data){
-		free(strhost_omg.data);
-		strhost_omg.data = NULL;
-	}
+				   
 
     rc = ngx_http_top_body_filter(r, in);
 

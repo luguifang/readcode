@@ -492,6 +492,23 @@ struct ngx_http_location_tree_node_s {
 };
 
 
+
+typedef struct {
+	ngx_str_t   livename;
+	ngx_str_t 	host;
+	ngx_str_t   postkeyword;
+	ngx_str_t 	matchcode;
+	ngx_str_t 	repacecode;
+
+}live_keword_t;
+
+
+
+
+
+
+
+
 void ngx_http_core_run_phases(ngx_http_request_t *r);
 ngx_int_t ngx_http_core_generic_phase(ngx_http_request_t *r,
     ngx_http_phase_handler_t *ph);
