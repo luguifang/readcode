@@ -1950,8 +1950,6 @@ ngx_http_upstream_process_headers(ngx_http_request_t *r, ngx_http_upstream_t *u)
         }
 
         uri = &u->headers_in.x_accel_redirect->value;
-
-		printf("============================uri:%s====\n",uri->data);
 		
         ngx_str_null(&args);
         flags = NGX_HTTP_LOG_UNSAFE;
@@ -2355,15 +2353,19 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
 #endif
 
+	/*使用缓存后的处理*/
+
+	/*output_ctx 指向当前请求的ngx_http_request_t 结构体，这是因为接下来转发包体的方法都只接受
+	ngx_event_pipe_t 参数，且只能由output_ctx 成员获取到表示请求的ngx_http_request_t 结构体----lgf*/
     p = u->pipe;
 
     p->output_filter = (ngx_event_pipe_output_filter_pt) ngx_http_output_filter;
     p->output_ctx = r;
     p->tag = u->output.tag;
-    p->bufs = u->conf->bufs;
+    p->bufs = u->conf->bufs; //内存缓冲区的限制
     p->busy_size = u->conf->busy_buffers_size;
     p->upstream = u->peer.connection;
-    p->downstream = c;
+    p->downstream = c; //downstream 在这里被初始化为Nginx 与下游客户端之间的连接
     p->pool = r->pool;
     p->log = c->log;
 
@@ -2450,7 +2452,9 @@ ngx_http_upstream_send_response(ngx_http_request_t *r, ngx_http_upstream_t *u)
     p->send_timeout = clcf->send_timeout;
     p->send_lowat = clcf->send_lowat;
 
+	/*设置处理上游读事件回调方法为ngx_http_upstream_process_upstream*/
     u->read_event_handler = ngx_http_upstream_process_upstream;
+	/*设置处理下游写事件的回调方法为ngx_http_upstream_process_downstream*/
     r->write_event_handler = ngx_http_upstream_process_downstream;
 
     ngx_http_upstream_process_upstream(r, u);
@@ -3100,11 +3104,13 @@ ngx_http_upstream_finalize_request(ngx_http_request_t *r,
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "finalize http upstream request: %i", rc);
 
+	/*将cleanup 指向的清理资源回调方法置为NULL 空指针*/
     if (u->cleanup) {
         *u->cleanup = NULL;
         u->cleanup = NULL;
     }
-
+	
+	/*释放解析终极域名时分配的资源*/
     if (u->resolved && u->resolved->ctx) {
         ngx_resolve_name_done(u->resolved->ctx);
         u->resolved->ctx = NULL;
@@ -3120,12 +3126,14 @@ ngx_http_upstream_finalize_request(ngx_http_request_t *r,
         }
     }
 
+	/*表示调用HTTP模块负责实现的finalize_request方法。HTTP模块可能会在upstream请求结束时执行一些操作*/
     u->finalize_request(r, rc);
 
     if (u->peer.free) {
         u->peer.free(&u->peer, u->peer.data, 0);
     }
 
+	/*如果与上游间的TCP连接还存在，则关闭这个TCP连接*/
     if (u->peer.connection) {
 
 #if (NGX_HTTP_SSL)
@@ -3160,7 +3168,7 @@ ngx_http_upstream_finalize_request(ngx_http_request_t *r,
                        "http upstream temp fd: %d",
                        u->pipe->temp_file->file.fd);
     }
-
+	/*如果使用了磁盘文件作为缓存来向下游转发响应，则需要删除用于缓存响应的临时文件 -----lgf*/
     if (u->store && u->pipe && u->pipe->temp_file
         && u->pipe->temp_file->file.fd != NGX_INVALID_FILE)
     {
@@ -3215,9 +3223,11 @@ ngx_http_upstream_finalize_request(ngx_http_request_t *r,
 #endif
        )
     {
+    	/*如果已经向下游客户端发送了HTTP响应头部，却出现了错误，那么将会通过下面的
+	ngx_http_send_special(r, NGX_HTTP_LAST)将头部全部发送完毕*/
         rc = ngx_http_send_special(r, NGX_HTTP_LAST);
     }
-
+	/*最后还是通过调用HTTP框架提供的ngx_http_finalize_request方法来结束请求*/
     ngx_http_finalize_request(r, rc);
 }
 

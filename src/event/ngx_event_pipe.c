@@ -29,10 +29,11 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
     ngx_event_t  *rev, *wev;
 
     for ( ;; ) {
+		/*检查do_write 标志位*/
         if (do_write) {
 					
             p->log->action = "sending to client";
-
+			/*调用ngx_event_pipe_write_to_downstream方法将读取到的响应转发到下游 ---lgf*/
             rc = ngx_event_pipe_write_to_downstream(p);
 
             if (rc == NGX_ABORT) {
@@ -43,12 +44,12 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
                 return NGX_OK;
             }
         }
-
+		
         p->read = 0;
         p->upstream_blocked = 0;
 
         p->log->action = "reading upstream";
-
+		/*调用ngx_event_pipe_read_upstream方法读取上游服务器的响应，同时检测其返回值 --lgf*/
         if (ngx_event_pipe_read_upstream(p) == NGX_ABORT) {
             return NGX_ABORT;
         }
@@ -64,11 +65,11 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
         rev = p->upstream->read;
 
         flags = (rev->eof || rev->error) ? NGX_CLOSE_EVENT : 0;
-
+		/*调用ngx_handle_read_event方法将上游的读事件添加到epoll中，等待下一次接收到上游响应的事件出现*/
         if (ngx_handle_read_event(rev, flags) != NGX_OK) {
             return NGX_ABORT;
         }
-
+		/*调用ngx_add_timer方法将上游的读事件添加到定时器中----lgf*/
         if (rev->active && !rev->ready) {
             ngx_add_timer(rev, p->read_timeout);
 
@@ -96,6 +97,16 @@ ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
     return NGX_OK;
 }
 
+
+/*
+ngx_event_pipe_read_upstream方法负责接收上游的响应，在这个过程中会涉及以下4种情况。
+·接收响应头部时可能接收到部分包体。
+·如果没有达到bufs.num上限，那么可以分配bufs.size大小的内存块充当接收缓冲区。
+·如果恰好下游的连接处于可写状态，则应该优先发送响应来清理出空闲缓冲区。
+·如果缓冲区全部写满，则应该写入临时文件。
+这4种情况会造成ngx_event_pipe_read_upstream方法较为复杂，特别是任何一个ngx_buf_t缓冲区都存在复用的情况
+
+*/
 
 static ngx_int_t
 ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
@@ -424,6 +435,11 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
     return NGX_OK;
 }
 
+
+/*
+ngx_event_pipe_write_to_downstream方法负责把in链表和out链表中管理的缓冲区发送给下游客户端
+
+*/
 
 static ngx_int_t
 ngx_event_pipe_write_to_downstream(ngx_event_pipe_t *p)
