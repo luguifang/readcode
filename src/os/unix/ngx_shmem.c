@@ -10,6 +10,7 @@
 
 
 #if (NGX_HAVE_MAP_ANON)
+/*linux mmap 共享内存----lgf*/
 
 ngx_int_t
 ngx_shm_alloc(ngx_shm_t *shm)
@@ -38,6 +39,7 @@ ngx_shm_free(ngx_shm_t *shm)
 }
 
 #elif (NGX_HAVE_MAP_DEVZERO)
+/*通过 mmap 映射文件穿件的共享内存------lgf*/
 
 ngx_int_t
 ngx_shm_alloc(ngx_shm_t *shm)
@@ -82,7 +84,7 @@ ngx_shm_free(ngx_shm_t *shm)
 
 #include <sys/ipc.h>
 #include <sys/shm.h>
-
+/*通过linux shmget 的方式创建共享内存-----lgf*/
 
 ngx_int_t
 ngx_shm_alloc(ngx_shm_t *shm)

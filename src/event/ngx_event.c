@@ -513,7 +513,13 @@ ngx_event_module_init(ngx_cycle_t *cycle)
         return NGX_OK;
     }
 
+	/*nginx 共享内存在统计模块的使用--------lgf-6.1*/
+	/*Nginx充分考虑了CPU的二级缓存。在目前许多CPU架构下缓存行的大小都是
+	128字节，而下面需要统计的变量都是访问非常频繁的成员，同时它们占用的内存又非常少，所以采用了每个成员都使用
+	128字节存放的形式，这样速度更快*/
+	
 
+	
     /* cl should be equal or bigger than cache line size */
 
     cl = 128;
@@ -532,6 +538,9 @@ ngx_event_module_init(ngx_cycle_t *cycle)
            + cl;         /* ngx_stat_writing */
 
 #endif
+
+
+
 
     shm.size = size;
     shm.name.len = sizeof("nginx_shared_zone");
