@@ -272,6 +272,7 @@ typedef volatile ngx_atomic_uint_t  ngx_atomic_t;
 #define NGX_ATOMIC_T_LEN            (sizeof("-2147483648") - 1)
 
 
+/*------没有库支持时 通过语言级的原子操作控制-----lgf-6.2*/
 static ngx_inline ngx_atomic_uint_t
 ngx_atomic_cmp_set(ngx_atomic_t *lock, ngx_atomic_uint_t old,
      ngx_atomic_uint_t set)
