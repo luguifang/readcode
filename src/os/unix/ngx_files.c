@@ -407,17 +407,21 @@ ngx_close_glob(ngx_glob_t *gl)
     globfree(&gl->pglob);
 }
 
-
+/*使用文件锁实现了不会阻塞进程、不会使得进程进入睡眠状态的互斥锁-----lgf6.7*/
 ngx_err_t
 ngx_trylock_fd(ngx_fd_t fd)
 {
     struct flock  fl;
 
+	//这个文件锁并不用于锁文件中的内容，填充为0
     fl.l_start = 0;
     fl.l_len = 0;
     fl.l_pid = 0;
-    fl.l_type = F_WRLCK;
+    fl.l_type = F_WRLCK; 
     fl.l_whence = SEEK_SET;
+
+	/*获取fd对应的互斥锁，如果返回-1，则这时的ngx_errno将保存错误码*/
+	//F_SETLK意味着不会导致进程睡眠
 
     if (fcntl(fd, F_SETLK, &fl) == -1) {
         return ngx_errno;
@@ -426,7 +430,7 @@ ngx_trylock_fd(ngx_fd_t fd)
     return 0;
 }
 
-
+/*ngx_lock_fd方法将会阻塞进程的执行，使用时需要非常谨慎*/
 ngx_err_t
 ngx_lock_fd(ngx_fd_t fd)
 {
@@ -438,6 +442,7 @@ ngx_lock_fd(ngx_fd_t fd)
     fl.l_type = F_WRLCK;
     fl.l_whence = SEEK_SET;
 
+	//F_SETLKW意味着会导致进程睡眠
     if (fcntl(fd, F_SETLKW, &fl) == -1) {
         return ngx_errno;
     }
@@ -454,13 +459,13 @@ ngx_unlock_fd(ngx_fd_t fd)
     fl.l_start = 0;
     fl.l_len = 0;
     fl.l_pid = 0;
-    fl.l_type = F_UNLCK;
+    fl.l_type = F_UNLCK; // F_UNLCK表示将要释放锁
     fl.l_whence = SEEK_SET;
 
     if (fcntl(fd, F_SETLK, &fl) == -1) {
         return  ngx_errno;
     }
-
+	/*当关闭fd句柄对应的文件时，当前进程将自动释放已经拿到的锁*/
     return 0;
 }
 
