@@ -25,6 +25,7 @@ ngx_shmtx_create(ngx_shmtx_t *mtx, void *addr, u_char *name)
 
 #if (NGX_HAVE_POSIX_SEM)
 
+	/*信号量sem初始化为0， 用于进程间的通信----lgf6.5*/
     if (sem_init(&mtx->sem, 1, 0) == -1) {
         ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, ngx_errno,
                       "sem_init() failed");
@@ -65,6 +66,9 @@ ngx_shmtx_trylock(ngx_shmtx_t *mtx)
             && ngx_atomic_cmp_set(mtx->lock, val, val | 0x80000000));
 }
 
+
+
+/*给信号量加锁*/
 
 void
 ngx_shmtx_lock(ngx_shmtx_t *mtx)
