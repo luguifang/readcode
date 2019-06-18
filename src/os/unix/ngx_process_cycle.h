@@ -12,12 +12,13 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 
+/*------channel 的一些宏定义--父子进程通信的命令含义--lgf6.3*/
 
-#define NGX_CMD_OPEN_CHANNEL   1
-#define NGX_CMD_CLOSE_CHANNEL  2
-#define NGX_CMD_QUIT           3
-#define NGX_CMD_TERMINATE      4
-#define NGX_CMD_REOPEN         5
+#define NGX_CMD_OPEN_CHANNEL   1	//打开频道，使用频道这种方式通信前必须发送的命令
+#define NGX_CMD_CLOSE_CHANNEL  2	//关闭已经打开的频道，实际上也就是关闭套接字
+#define NGX_CMD_QUIT           3	//要求接收方正常地退出进程
+#define NGX_CMD_TERMINATE      4	//要求接收方强制地结束进程
+#define NGX_CMD_REOPEN         5	//要求接收方重新打开进程已经打开过的文件
 
 
 #define NGX_PROCESS_SINGLE     0
