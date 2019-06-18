@@ -11,11 +11,14 @@
 #include <ngx_channel.h>
 
 
+
+
+/*-------ngx_signal 结构体用来描述接收到信号后的行为----lgf6.4*/
 typedef struct {
-    int     signo;
-    char   *signame;
-    char   *name;
-    void  (*handler)(int signo);
+    int     signo; //需要处理的信号
+    char   *signame; //信号对应的字符串名称
+    char   *name; 	//这个信号对应的nginx 命令
+    void  (*handler)(int signo); 	//收到信号后的回调处理方法
 } ngx_signal_t;
 
 
@@ -33,6 +36,9 @@ ngx_int_t        ngx_process_slot; /*当前操作的进程在ngx_process 数组�
 ngx_socket_t     ngx_channel;
 ngx_int_t        ngx_last_process; /*ngx_process  数组 中有意义的ngx_process_t元素中最大下标*/
 ngx_process_t    ngx_processes[NGX_MAX_PROCESSES]; /*存储所有子进程的数组 ngx_process_t 结构体存储进程相关信息*/
+
+
+/*定义了进程要处理的所有信号------lgf6.4*/
 
 
 ngx_signal_t  signals[] = {
@@ -281,7 +287,7 @@ ngx_execute_proc(ngx_cycle_t *cycle, void *data)
     exit(1);
 }
 
-//向进程安装信号及信号处理程式
+/*初始化信号并向进程安装信号及信号处理程式----lgf6.4*/
 ngx_int_t
 ngx_init_signals(ngx_log_t *log)
 {
@@ -290,8 +296,9 @@ ngx_init_signals(ngx_log_t *log)
 
     for (sig = signals; sig->signo != 0; sig++) {
         ngx_memzero(&sa, sizeof(struct sigaction));
-        sa.sa_handler = sig->handler;
-        sigemptyset(&sa.sa_mask);
+        sa.sa_handler = sig->handler;	//安装信号处理函数
+        sigemptyset(&sa.sa_mask);   //将sa中的全位置0
+        /*向linux 注册信号回调方法*/
         if (sigaction(sig->signo, &sa, NULL) == -1) {
             ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
                           "sigaction(%s) failed", sig->signame);
@@ -302,7 +309,7 @@ ngx_init_signals(ngx_log_t *log)
     return NGX_OK;
 }
 
-/*------处理信号-------*/
+/*------处理信号-------lgf6.4*/
 void
 ngx_signal_handler(int signo)
 {
