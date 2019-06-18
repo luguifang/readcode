@@ -120,23 +120,52 @@ struct ngx_module_s {
     ngx_uint_t            spare1;
     ngx_uint_t            spare2;
     ngx_uint_t            spare3;
+    /*spare 系列保留值暂时未用*/
 
     ngx_uint_t            version;
+    /*模块的版本，便于将来的扩展。目前只有一种，默认为1*/
 
     void                 *ctx;
+	/*ctx用于指向一类模块的上下文结构体，为什么需要ctx呢？因为前面说过，
+	Nginx模块有许多种类，不同类模块之间的功能差别很大。例如，事件类型的模块主要处理
+	I/O事件相关的功能，HTTP类型的模块主要处理HTTP应用层的功能。
+	这样，每个模块都有了自己的特性，而ctx将会指向特定类型模块的公共接口。例如，在HTTP模块中，
+	ctx需要指向ngx_http_module_t结构体
+	*/
+    
     ngx_command_t        *commands;
+    /*commands将处理nginx.conf中的配置项*/
     ngx_uint_t            type;
+    /*type表示该模块的类型，它与ctx指针是紧密相关的。在官方
+	Nginx中，它的取值范围是以下5种：NGX_HTTP_MODULE、NGX_CORE_MODULE、
+	NGX_CONF_MODULE、NGX_EVENT_MODULE、NGX_MAIL_MODULE*/
 
     ngx_int_t           (*init_master)(ngx_log_t *log);
+    /*/*虽然从字面上理解应当在master进程启动时回调
+	init_master，但到目前为止，框架代码从来不会调用它，因此，可将
+	init_master设为NULL */*/
 
     ngx_int_t           (*init_module)(ngx_cycle_t *cycle);
+    /*init_module回调方法在初始化所有模块时被调用。在
+	master/worker模式下，这个阶段将在启动worker子进程前完成*/
 
     ngx_int_t           (*init_process)(ngx_cycle_t *cycle);
+    /* init_process回调方法在正常服务前被调用。在master/worker模式下，多个
+	worker子进程已经产生，在每个worker进程的初始化过程会调用所有模块的
+	init_process函数*/
     ngx_int_t           (*init_thread)(ngx_cycle_t *cycle);
+    /* 由于Nginx暂不支持多线程模式，所以
+	init_thread在框架代码中没有被调用过，设为NULL*/
     void                (*exit_thread)(ngx_cycle_t *cycle);
+    /*同上，exit_thread也不支持，设为NULL*/
     void                (*exit_process)(ngx_cycle_t *cycle);
+    /*exit_process回调方法在服务停止前调用。在
+	master/worker模式下，worker进程会在退出前调用它
+	*/
 
     void                (*exit_master)(ngx_cycle_t *cycle);
+    /*exit_master回调方法将在master进程退出前被调用*/
+    
 
     uintptr_t             spare_hook0;
     uintptr_t             spare_hook1;
@@ -146,6 +175,7 @@ struct ngx_module_s {
     uintptr_t             spare_hook5;
     uintptr_t             spare_hook6;
     uintptr_t             spare_hook7;
+    /*以上8个spare_hook变量也是保留字段，目前没有使用，*/
 };
 
 
