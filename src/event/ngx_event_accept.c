@@ -340,6 +340,9 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
 }
 
 
+
+/*这儿会把监听的socket fd 的相关的读事件加入到epoll 中 ----lgf!!*/
+
 static ngx_int_t
 ngx_enable_accept_events(ngx_cycle_t *cycle)
 {
